@@ -15,7 +15,7 @@ def recommend_kdc(title, author):
 정확한 숫자만 아래 형식처럼 간결하게 말해줘:
 KDC: 813.7"""
     try:
-        model = genai.GenerativeModel("gemini-pro")
+        model = genai.GenerativeModel("models/gemini-pro")
         response = model.generate_content(prompt)
         st.write("🧠 Gemini 응답 원문:", response.text)  # 🔍 응답 확인
         lines = response.text.strip().splitlines()
