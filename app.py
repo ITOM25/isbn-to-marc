@@ -17,12 +17,14 @@ KDC: 813.7"""
     try:
         model = genai.GenerativeModel("gemini-pro")
         response = model.generate_content(prompt)
+        st.write("🧠 Gemini 응답 원문:", response.text)  # 🔍 응답 확인
         lines = response.text.strip().splitlines()
         for line in lines:
-            if line.startswith("KDC:"):
+            if "KDC:" in line:
                 return line.replace("KDC:", "").strip()
     except Exception as e:
-        return "000"  # 실패 시 기본값
+        st.error(f"❌ Gemini 오류 발생: {e}")
+        return "000"
     return "000"
 
 # 📚 알라딘 API 키
@@ -48,8 +50,11 @@ def fetch_book_data_from_aladin(isbn):
     marc = f"""=001  {isbn}
 =245  10$a{title} /$c{author}
 =260  \\$a서울 :$b{publisher},$c{pubdate}.
-=020  \\$a{isbn}
-=056  \\$a{kdc}$26"""
+=020  \\$a{isbn}"""
+
+    if kdc and kdc != "000":
+        marc += f"\n=056  \\$a{kdc}$26"
+
     return marc
 
 # 🌐 Streamlit 앱 시작
