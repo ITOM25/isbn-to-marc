@@ -1,6 +1,4 @@
 import streamlit as st
-
-# ✅ [여기] 페이지 설정 선언을 먼저!
 st.set_page_config(page_title="📚 ISBN to MARC + KDC", page_icon="🔖")
 
 import requests
@@ -10,13 +8,13 @@ import os
 # ✅ 앱 시작 로그
 st.write("✅ 앱 시작됨")
 
-# ✅ Gemini API Key 로드
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     st.write("🔑 secrets 불러오기 성공")
 except Exception as e:
     st.error(f"❌ [에러] secrets 불러오기 실패: {e}")
     raise e
+
 
 # ✅ Gemini 설정
 try:
