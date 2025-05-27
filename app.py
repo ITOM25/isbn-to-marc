@@ -1,16 +1,14 @@
-# ✅ 딱 이 순서로! (이건 성역입니다)
 import streamlit as st
 st.set_page_config(page_title="📚 ISBN to MARC + KDC", page_icon="🔖")
 
-# 그 다음부터 나머지 import
+import os
 import requests
 import google.generativeai as genai
-import os
 
-# 그 다음 출력
+# ✅ 앱 시작 로그
 st.write("✅ 앱 시작됨")
 
-
+# ✅ Gemini API Key 로드
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     st.write("🔑 secrets 불러오기 성공")
@@ -18,21 +16,12 @@ except Exception as e:
     st.error(f"❌ [에러] secrets 불러오기 실패: {e}")
     raise e
 
-
 # ✅ Gemini 설정
 try:
     genai.configure(api_key=API_KEY)
     st.write("🧠 Gemini 설정 완료")
 except Exception as e:
     st.error(f"❌ [에러] Gemini 모듈 문제: {e}")
-    raise e
-
-# ✅ requests 체크
-try:
-    import requests
-    st.write("🌐 requests 모듈 로드 완료")
-except Exception as e:
-    st.error(f"❌ [에러] requests 모듈 문제: {e}")
     raise e
 
 # 💬 Gemini KDC 추천 함수
@@ -84,7 +73,6 @@ def fetch_book_data_from_aladin(isbn):
     return marc
 
 # 🌐 Streamlit 앱 본문 시작
-st.set_page_config(page_title="📚 ISBN to MARC + KDC", page_icon="🔖")
 st.title("📚 ISBN to MARC 변환기 + KDC 자동 추천")
 
 isbn_list = []
