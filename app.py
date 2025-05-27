@@ -1,4 +1,8 @@
 import streamlit as st
+
+# ✅ [여기] 페이지 설정 선언을 먼저!
+st.set_page_config(page_title="📚 ISBN to MARC + KDC", page_icon="🔖")
+
 import requests
 import google.generativeai as genai
 import os
