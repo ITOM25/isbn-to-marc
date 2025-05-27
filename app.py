@@ -1,12 +1,15 @@
+# ✅ 딱 이 순서로! (이건 성역입니다)
 import streamlit as st
 st.set_page_config(page_title="📚 ISBN to MARC + KDC", page_icon="🔖")
 
+# 그 다음부터 나머지 import
 import requests
 import google.generativeai as genai
 import os
 
-# ✅ 앱 시작 로그
+# 그 다음 출력
 st.write("✅ 앱 시작됨")
+
 
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
