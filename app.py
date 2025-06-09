@@ -179,4 +179,9 @@ st.download_button(
     mime="text/csv"
 )
 
+st.markdown("""
+<div style='text-align: center; font-size: 14px; color: gray;'>
+📚 <strong>도서 DB 제공</strong> : <a href='https://www.aladin.co.kr' target='_blank'>알라딘 인터넷서점(www.aladin.co.kr)</a>
+</div>
+""", unsafe_allow_html=True)
 
