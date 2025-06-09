@@ -62,24 +62,35 @@ def fetch_book_data_from_aladin(isbn):
     author = item.get("author", "저자미상")
     publisher = item.get("publisher", "출판사미상")
     pubdate = item.get("pubDate", "2025")[:4]
-    price = str(item.get("priceStandard", "미정"))
-    series_name = item.get("seriesInfo", {}).get("seriesName")
     kdc = recommend_kdc(title, author)
+    price = item.get("priceStandard")
+    series_title = item.get("seriesTitle", "").strip()
 
     marc = f"""=001  {isbn}
 =245  10$a{title} /$c{author}
 =260  \\$a서울 :$b{publisher},$c{pubdate}.
-=020  \\$a{isbn}$c\\{price}
-=950  0\\$b\\{price}"""
+=020  \\$a{isbn}"""
 
+    # 가격 추가
+    if price:
+        marc = marc.rstrip() + f":$c\\{price}"
+
+    # KDC
     if kdc and kdc != "000":
         marc += f"\n=056  \\$a{kdc}$26"
 
-    if series_name:
-        marc += f"\n=490  1\\$a{series_name} ;$v"
-        marc += f"\n=830  \\0$a{series_name} ;$v"
+    # 총서 정보
+    if series_title:
+        marc += f"\n=490  10$a{series_title} ;$v"
+        marc += f"\n=830  \\0$a{series_title} ;$v"
+
+    # 950 정가
+    if price:
+        marc += f"\n=950  0\\$b\\{price}"
 
     return marc
+
+
 
 
 # 🌐 Streamlit 앱 본문 시작
