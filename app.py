@@ -151,15 +151,20 @@ else:
 import streamlit as st
 import io
 
-# ✨ 예시 CSV 내용 만들기
-csv_example = "ISBN,등록기호,등록번호,별치기호\n9791173473968,JUT,12345,TCH\n"
+# ✨ 예시 CSV 내용 만들기 (ISBN 앞에 ' 붙여서 엑셀이 숫자 취급 안 하도록)
+csv_example = "ISBN,등록기호,등록번호,별치기호\n'9791173473968,JUT,12345,TCH\n"
 
-# ✨ 다운로드 버튼 (핵심: getvalue() 사용!)
+# ✨ utf-8-sig 인코딩 후 바이너리로 다운로드
+buffer = io.BytesIO()
+buffer.write(csv_example.encode("utf-8-sig"))
+buffer.seek(0)
+
 st.download_button(
     label="📄 서식 파일 다운로드",
-    data=io.StringIO(csv_example).getvalue(),  # 여기! getvalue()가 핵심
+    data=buffer,
     file_name="isbn_template.csv",
     mime="text/csv"
 )
+
 
 
