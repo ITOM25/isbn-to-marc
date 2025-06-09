@@ -162,15 +162,7 @@ buffer = io.BytesIO()
 buffer.write(csv_example.encode("utf-8-sig"))
 buffer.seek(0)
 
-# 다운로드 버튼
-st.download_button(
-    label="📄 서식 파일 다운로드",
-    data=buffer,
-    file_name="isbn_template.csv",
-    mime="text/csv"
-)
-
-# 📌 사용자 안내 문구 삽입
+# 안내문 먼저 보여주기
 st.markdown("""
 📌 **서식 파일 사용 안내**
 
@@ -179,6 +171,12 @@ st.markdown("""
 실제 사용 시에는 **예시 데이터를 삭제하고**, ISBN은 **작은따옴표 없이 숫자만** 입력해주세요.
 """)
 
-
+# 다운로드 버튼 아래에 두기보단 위에 배치
+st.download_button(
+    label="📄 서식 파일 다운로드",
+    data=buffer,
+    file_name="isbn_template.csv",
+    mime="text/csv"
+)
 
 
