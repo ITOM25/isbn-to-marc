@@ -65,7 +65,8 @@ def fetch_book_data_from_aladin(isbn):
     publisher = item.get("publisher", "출판사미상")
     pubdate = item.get("pubDate", "2025")[:4]
     price = item.get("priceStandard")
-    series_title = item.get("seriesTitle", "").strip()
+    # 💡 총서명 추출 수정!
+    series_title = item.get("seriesInfo", {}).get("seriesName", "").strip()
     kdc = recommend_kdc(title, author)
 
     # 020 ISBN + 가격
@@ -84,7 +85,7 @@ def fetch_book_data_from_aladin(isbn):
     if kdc and kdc != "000":
         marc += f"\n=056  \\$a{kdc}$26"
 
-    # 총서 정보
+    # 490 / 830 총서
     if series_title:
         marc += f"\n=490  10$a{series_title} ;$v"
         marc += f"\n=830  \\0$a{series_title} ;$v"
@@ -94,6 +95,7 @@ def fetch_book_data_from_aladin(isbn):
         marc += f"\n=950  0\\$b\\{price}"
 
     return marc
+
 
 
 
