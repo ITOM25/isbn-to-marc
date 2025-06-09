@@ -147,3 +147,16 @@ if isbn_list:
     st.download_button("📅 모든 MARC 다운로드", data=full_text, file_name="marc_output.txt", mime="text/plain")
 else:
     st.info("📌 ISBN을 입력하거나 CSV 파일을 업로드해 주세요.")
+
+import io
+
+# ✨ 예시 CSV 내용 만들기
+csv_example = "ISBN,등록기호,등록번호,별치기호\n9791173473968,JUT,12345,TCH\n"
+
+# ✨ 다운로드 버튼
+st.download_button(
+    label="📄 서식 파일 다운로드",
+    data=io.StringIO(csv_example),
+    file_name="isbn_template.csv",
+    mime="text/csv"
+)
