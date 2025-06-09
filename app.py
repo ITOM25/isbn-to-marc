@@ -106,7 +106,15 @@ st.title("📚 ISBN to MARC 변환기 + KDC + 보유정보")
 
 isbn_list = []
 
-# CSV 복사입
+# 단일 ISBN 입력
+df_single = None
+st.subheader("🔹 단일 ISBN 입력")
+single_isbn = st.text_input("ISBN을 입력하세요", placeholder="예: 9788936434267")
+
+if single_isbn.strip():
+    isbn_list = [[single_isbn.strip(), "", "", ""]]
+
+# CSV 받기
 st.subheader("📁 [파일받기] .csv 업로드")
 uploaded_file = st.file_uploader("ISBN, 등록기호, 등록번호, 별치기호 열이 있는 CSV 파일을 업로드하세요", type="csv")
 
@@ -138,4 +146,4 @@ if isbn_list:
     full_text = "\n\n".join(marc_results)
     st.download_button("📅 모든 MARC 다운로드", data=full_text, file_name="marc_output.txt", mime="text/plain")
 else:
-    st.info("📌 CSV 파일을 업로드해 주세요.")
+    st.info("📌 ISBN을 입력하거나 CSV 파일을 업로드해 주세요.")
