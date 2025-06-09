@@ -58,6 +58,7 @@ def fetch_book_data_from_aladin(isbn):
         return None
 
     item = data["item"][0]
+    st.write("🔍 알라딘 응답 item 전체:", item)
     title = item.get("title", "제목없음")
     author = item.get("author", "저자미상")
     publisher = item.get("publisher", "출판사미상")
