@@ -151,20 +151,34 @@ else:
 import streamlit as st
 import io
 
-# ✨ 예시 CSV 내용 만들기 (ISBN 앞에 ' 붙여서 엑셀이 숫자 취급 안 하도록)
+import streamlit as st
+import io
+
+# 예시 CSV 내용
 csv_example = "ISBN,등록기호,등록번호,별치기호\n'9791173473968,JUT,12345,TCH\n"
 
-# ✨ utf-8-sig 인코딩 후 바이너리로 다운로드
+# utf-8-sig로 인코딩
 buffer = io.BytesIO()
 buffer.write(csv_example.encode("utf-8-sig"))
 buffer.seek(0)
 
+# 다운로드 버튼
 st.download_button(
     label="📄 서식 파일 다운로드",
     data=buffer,
     file_name="isbn_template.csv",
     mime="text/csv"
 )
+
+# 📌 사용자 안내 문구 삽입
+st.markdown("""
+📌 **서식 파일 사용 안내**
+
+서식 파일의 두 번째 줄은 예시 데이터입니다.  
+다운로드 시 ISBN이 `9.79E+12`처럼 지수 표기로 보이는 현상을 방지하기 위해, ISBN 앞에 작은따옴표(`'`)가 삽입되어 있습니다.  
+실제 사용 시에는 **예시 데이터를 삭제하고**, ISBN은 **작은따옴표 없이 숫자만** 입력해주세요.
+""")
+
 
 
 
