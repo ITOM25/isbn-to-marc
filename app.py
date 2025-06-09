@@ -148,7 +148,8 @@ if isbn_list:
 else:
     st.info("📌 ISBN을 입력하거나 CSV 파일을 업로드해 주세요.")
 
-import io
+import streamlit as st
+import io  # 🔧 필수! StringIO를 사용하려면 반드시 필요함
 
 # ✨ 예시 CSV 내용 만들기
 csv_example = "ISBN,등록기호,등록번호,별치기호\n9791173473968,JUT,12345,TCH\n"
@@ -156,7 +157,8 @@ csv_example = "ISBN,등록기호,등록번호,별치기호\n9791173473968,JUT,12
 # ✨ 다운로드 버튼
 st.download_button(
     label="📄 서식 파일 다운로드",
-    data=io.StringIO(csv_example),
+    data=io.StringIO(csv_example),  # ← 문자열을 파일처럼 다루기 위해 감쌈!
     file_name="isbn_template.csv",
     mime="text/csv"
 )
+
