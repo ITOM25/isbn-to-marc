@@ -59,22 +59,26 @@ def fetch_book_data_from_aladin(isbn):
 
     item = data["item"][0]
     st.write("🔍 알라딘 응답 item 전체:", item)
+
     title = item.get("title", "제목없음")
     author = item.get("author", "저자미상")
     publisher = item.get("publisher", "출판사미상")
     pubdate = item.get("pubDate", "2025")[:4]
-    kdc = recommend_kdc(title, author)
     price = item.get("priceStandard")
     series_title = item.get("seriesTitle", "").strip()
+    kdc = recommend_kdc(title, author)
 
-    marc = f"""=001  {isbn}
+    # 020 ISBN + 가격
+    if price:
+        marc = f"""=001  {isbn}
+=245  10$a{title} /$c{author}
+=260  \\$a서울 :$b{publisher},$c{pubdate}.
+=020  \\$a{isbn}:$c\\{price}"""
+    else:
+        marc = f"""=001  {isbn}
 =245  10$a{title} /$c{author}
 =260  \\$a서울 :$b{publisher},$c{pubdate}.
 =020  \\$a{isbn}"""
-
-    # 가격 추가
-    if price:
-        marc = marc.rstrip() + f":$c\\{price}"
 
     # KDC
     if kdc and kdc != "000":
@@ -90,6 +94,7 @@ def fetch_book_data_from_aladin(isbn):
         marc += f"\n=950  0\\$b\\{price}"
 
     return marc
+
 
 
 
