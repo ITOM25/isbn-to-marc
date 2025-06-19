@@ -199,9 +199,8 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     kdc = recommend_kdc(title, author)
 
     marc = rf"=001  {isbn}"
-    marc += rf"\n=245  10$a{title} /$c{author}"
     marc += rf"\n=260  \\$a서울 :$b{publisher},$c{pubdate}."
-    marc += rf"\n=020  \\$a{isbn}" + (rf":$c\{price}" if price else "")
+    marc += rf"\n=020  \\$a{isbn}" + (rf":$c{price}" if price else "")
 
     if kdc and kdc != "000":
         marc += rf"\n=056  \\$a{kdc}$26"
@@ -211,7 +210,7 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
         marc += rf"\n=830  \\0$a{series_title} ;$v"
 
     if price:
-        marc += rf"\n=950  0\\$b\{price}"
+        marc += rf"\n=950  0\\$b{price}"
 
     if reg_mark or reg_no or copy_symbol:
         tag_049 = rf"=049  0\\"
