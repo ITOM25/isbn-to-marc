@@ -93,11 +93,15 @@ from bs4 import BeautifulSoup
 
 def fetch_from_nlk(isbn, nlk_key):
     url = f"https://www.nl.go.kr/seoji/SearchApi.do?cert_key={nlk_key}&result_style=xml&page_no=1&page_size=10&isbn={isbn}"
+    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
-        res = requests.get(url, timeout=10)
+        res = requests.get(url, headers=headers, timeout=10)
+        res.encoding = 'utf-8'
         root = ET.fromstring(res.text)
         doc = root.find('.//docs/e')
-        return doc.findtext('TITLE'), doc.findtext('AUTHOR')
+        title = doc.findtext('TITLE')
+        author = doc.findtext('AUTHOR')
+        return title, author
     except:
         return "제목없음", "지은이 미생"
 
