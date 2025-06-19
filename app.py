@@ -112,35 +112,66 @@ def split_title(full):
     return full.strip(), ""
 
 def generate_245(title_str, author_str):
+    def safe_extract(raw, keyword):
+        for entry in raw.split(";"):
+            if keyword in entry:
+                parts = entry.split(":", 1)
+                if len(parts) == 2:
+                    return parts[1].strip()
+        return ""
+
     title, subtitle = split_title(title_str)
-    writer, translator = "", ""
-    for entry in author_str.split(";"):
-        if "지은이" in entry: writer = entry.split(":", 1)[1].strip()
-        if "옮긴이" in entry: translator = entry.split(":", 1)[1].strip()
+
+    writer_raw = safe_extract(author_str, "지은이")
+    translator_raw = safe_extract(author_str, "옮긴이")
+
+    writer_list = [name.strip() for name in writer_raw.split(",") if name.strip()]
+    translator_list = [name.strip() for name in translator_raw.split(",") if name.strip()]
+
     parts = []
-    if writer:
-        w_list = [f"$d{name}" for name in writer.split(",") if name.strip()]
-        if w_list: w_list[-1] += " 지음"
-        parts.append(", ".join(w_list))
-    if translator:
-        t_list = [name.strip() for name in translator.split(",") if name.strip()]
-        if t_list: parts.append(";$e" + ", $e".join(t_list) + " 옮김")
-    line = f"=245  00$a{title}"
-    if subtitle: line += f" :$b{subtitle}"
-    if parts: line += f" /{' '.join(parts)}"
+    if writer_list:
+        writer_parts = []
+        for i, name in enumerate(writer_list):
+            if i == 0:
+                writer_parts.append(f"$d{name}")
+            else:
+                writer_parts.append(f"$e{name}")
+        writer_parts[-1] += " 지음"
+        parts.append(", ".join(writer_parts))
+
+    if translator_list:
+        translator_str = ";$e" + ", $e".join(translator_list) + " 옮김"
+        parts.append(translator_str)
+
+    responsibility = " ".join(parts)
+    line = "=245  00"
+    line += f"$a{title}"
+    if subtitle:
+        line += f" :$b{subtitle}"
+    if responsibility:
+        line += f" /{responsibility}"
     return line
 
 def generate_700(author_str):
+    def safe_extract_list(raw, keyword):
+        for entry in raw.split(";"):
+            if keyword in entry:
+                parts = entry.split(":", 1)
+                if len(parts) == 2:
+                    return [name.strip() for name in parts[1].split(",") if name.strip()]
+        return []
+
     lines = []
-    for entry in author_str.split(";"):
-        if "지은이" in entry or "옮긴이" in entry:
-            try: raw = entry.split(":", 1)[1]
-            except: continue
-            for name in raw.split(","):
-                if ' ' in name:
-                    lines.append(f"=700  1\\$a{reverse_name_order(name)}")
-                else:
-                    lines.append(f"=700  1\\$a{name.strip()}")
+    writer_list = safe_extract_list(author_str, "지은이")
+    translator_list = safe_extract_list(author_str, "옮긴이")
+
+    for name in writer_list + translator_list:
+        if ' ' in name:  # 성과 이름이 공백으로 분리됨
+            name_final = reverse_name_order(name)
+        else:
+            name_final = name
+        lines.append(f"=700  1\\$a{name_final}")
+
     return lines
 
 def generate_nlk_marc_fields(isbn):
