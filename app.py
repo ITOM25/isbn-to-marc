@@ -5,32 +5,35 @@ import openai
 import xml.etree.ElementTree as ET
 import re
 import io
-from bs4 import BeautifulSoup
 
 # ✅ API 키들 (secrets.toml에서 불러오기)
 openai_key = st.secrets["api_keys"]["openai_key"]
 aladin_key = st.secrets["api_keys"]["aladin_key"]
 nlk_key = st.secrets["api_keys"]["nlk_key"]
 
-# ✅ GPT 기반 KDC 추천
+# ✅ GPT 기반 KDC 추천 (openai>=1.0 방식)
 @st.cache_data(show_spinner=False)
 def recommend_kdc(title, author, api_key):
-    prompt = f"""도서 제목: {title}
+    try:
+        client = openai.OpenAI(api_key=api_key)
+
+        prompt = f"""도서 제목: {title}
 저자: {author}
 이 책의 주제를 고려하여 한국십진분류(KDC) 번호 하나를 추천해 주세요.
 정확한 숫자만 아래 형식으로 간단히 응답해 주세요:
 KDC: 813.7"""
-    try:
-        openai.api_key = api_key
-        response = openai.ChatCompletion.create(
+
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
         )
+
         answer = response.choices[0].message.content
         for line in answer.strip().splitlines():
             if "KDC:" in line:
                 return line.replace("KDC:", "").strip()
+
     except Exception as e:
         st.warning(f"GPT 오류: {e}")
     return "000"
@@ -124,3 +127,6 @@ st.markdown("""
 📚 <strong>도서 DB 제공</strong> : <a href='https://www.aladin.co.kr' target='_blank'>알라딘 인터넷서점(www.aladin.co.kr)</a>
 </div>
 """, unsafe_allow_html=True)
+
+
+# 🔁 GPT 최신 버전 테스트용 주석
