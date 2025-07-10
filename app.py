@@ -52,6 +52,24 @@ def fetch_from_nlk(isbn, nlk_key):
     except:
         return "제목없음", "지은이 미생"
 
+# 📚 부가기호 ADDCODE 추출 함수
+def fetch_additional_code_from_nlk(isbn):
+    try:
+        url = f"https://www.nl.go.kr/seoji/SearchApi.do?cert_key={nlk_key}&result_style=xml&page_no=1&page_size=10&isbn={isbn}"
+        res = requests.get(url, timeout=10)
+        res.encoding = 'utf-8'
+        root = ET.fromstring(res.text)
+
+        # 안전하게 첫 번째 <e> 항목만 추출
+        doc_list = root.findall('.//docs/e')
+        if doc_list:
+            add_code = doc_list[0].findtext('ADDCODE')
+            return add_code.strip() if add_code else ""
+    except Exception as e:
+        st.warning(f"📡 부가기호 가져오기 오류: {e}")
+    return ""
+
+
 # 📚 알라딘 기반 MARC 생성
 @st.cache_data(show_spinner=False)
 def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
