@@ -60,14 +60,14 @@ def fetch_additional_code_from_nlk(isbn):
         res.encoding = 'utf-8'
         root = ET.fromstring(res.text)
 
-        # 안전하게 첫 번째 <e> 항목만 추출
-        doc_list = root.findall('.//docs/e')
-        if doc_list:
-            add_code = doc_list[0].findtext('ADDCODE')
+        doc = root.find('.//docs/e')  # 핵심! 여기가 잘못됐던 부분
+        if doc is not None:
+            add_code = doc.findtext('EA_ADD_CODE')
             return add_code.strip() if add_code else ""
     except Exception as e:
-        st.warning(f"📡 부가기호 가져오기 오류: {e}")
+        print(f"📡 부가기호 가져오기 오류: {e}")
     return ""
+
 
 
 # 📚 알라딘 기반 MARC 생성
@@ -84,15 +84,23 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     price = data.get("priceStandard")
     series_title = data.get("seriesInfo", {}).get("seriesName", "").strip()
 
-    kdc = recommend_kdc(title, author, api_key=openai_key)
-    add_code = fetch_additional_code_from_nlk(isbn)  # 부가기호 가져오기
+    # 부가기호 가져오기
+    add_code = fetch_additional_code_from_nlk(isbn)
 
-    marc = f"=001  {isbn}\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
+    # GPT 기반 KDC 추천
+    kdc = recommend_kdc(title, author, api_key=openai_key)
+
+    # 💡 007 필드 고정값
+    marc = f"=007  $a ta\n"
+
+    # 📌 020 필드 구성
+    marc += f"=001  {isbn}\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
     if add_code:
         marc += f"$g{add_code}"
     if price:
         marc += f":$c\\{price}"
 
+    # 나머지 필드들
     if kdc and kdc != "000":
         marc += f"\n=056  \\$a{kdc}$26"
     if series_title:
@@ -105,6 +113,7 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
             marc += f"$f{copy_symbol}"
 
     return marc
+
 
 
 # 🎛️ UI 영역
