@@ -40,46 +40,45 @@ KDC: 813.7"""
     return "000"
 
 # 📚 부가기호 ADDCODE 추출 함수
+@st.cache_data(show_spinner=False)
 def fetch_additional_code_from_nlk(isbn):
     try:
         url = f"https://www.nl.go.kr/seoji/SearchApi.do?cert_key={nlk_key}&result_style=xml&page_no=1&page_size=10&isbn={isbn}"
         res = requests.get(url, timeout=10)
         res.encoding = 'utf-8'
         root = ET.fromstring(res.text)
-
         doc = root.find('.//docs/e')
         if doc is not None:
             add_code = doc.findtext('EA_ADD_CODE')
             return add_code.strip() if add_code else ""
     except Exception as e:
-        print(f"📡 부가기호 가져오기 오류: {e}")
+        print(f"📡 부가기호 오류: {e}")
     return ""
 
 # 📚 KPIPA 키워드 추출 함수
+@st.cache_data(show_spinner=False)
 def fetch_kpipa_keywords(isbn):
     try:
-        search_url = f"https://bnk.kpipa.or.kr/home/v3/search/bookSearch.do"
-        params = {"searchVal": isbn}
-        res = requests.get(search_url, params=params, timeout=10)
+        search_url = "https://bnk.kpipa.or.kr/home/v3/addition/adiPromoTotalList"
+        data = {"searchCondition": "isbn", "searchKeyword": isbn}
+        res = requests.post(search_url, data=data, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-
-        detail_link_tag = soup.select_one("a[href*='addition/adiPromoMetaDataView']")
-        if not detail_link_tag:
+        result = soup.select_one("table tbody tr td a")
+        if not result or not result.get("href"):
             return []
 
-        detail_href = detail_link_tag["href"]
+        detail_href = result["href"]
         detail_url = "https://bnk.kpipa.or.kr" + detail_href
-        res_detail = requests.get(detail_url, timeout=10)
-        soup_detail = BeautifulSoup(res_detail.text, "html.parser")
 
-        keyword_section = soup_detail.find("strong", string="키워드")
-        if keyword_section and keyword_section.parent:
-            text = keyword_section.parent.get_text(strip=True)
-            keywords = re.findall(r"#([^\s#]+)", text)
-            return keywords
-        return []
+        res2 = requests.get(detail_url, timeout=10)
+        soup2 = BeautifulSoup(res2.text, "html.parser")
+        section = soup2.find("strong", string=re.compile("키워드"))
+        if not section:
+            return []
+        lis = section.find_next_sibling("ul").find_all("li")
+        return [li.get_text(strip=True).lstrip("#") for li in lis if li.get_text(strip=True)]
     except Exception as e:
-        print(f"⚠️ 키워드 추출 오류: {e}")
+        print(f"⚠️ KPIPA 키워드 오류: {e}")
         return []
 
 # 📚 알라딘 기반 MARC 생성
@@ -98,6 +97,7 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
 
     add_code = fetch_additional_code_from_nlk(isbn)
     kdc = recommend_kdc(title, author, api_key=openai_key)
+    keywords = fetch_kpipa_keywords(isbn)
 
     marc = f"=007  ta\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
     if add_code:
@@ -106,6 +106,8 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
         marc += f":$c\\{price}"
     if kdc and kdc != "000":
         marc += f"\n=056  \\$a{kdc}$26"
+    if keywords:
+        marc += f"\n=653  \\$a" + "$a".join(keywords)
     if series_title:
         marc += f"\n=490  10$a{series_title} ;$v\n=830  \\0$a{series_title} ;$v"
     if price:
@@ -115,15 +117,10 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
         if copy_symbol:
             marc += f"$f{copy_symbol}"
 
-    # 📌 653 필드 키워드
-    keywords = fetch_kpipa_keywords(isbn)
-    if keywords:
-        marc += f"\n=653  \\$a" + "$a".join(keywords[:5])
-
     return marc
 
-# 🎛️ UI
-st.title("📚 ISBN to MARC 변환기 (GPT KDC + KPIPA 키워드)")
+# 🎛️ UI 영역
+st.title("📚 ISBN to MARC 변환기 (GPT + KPIPA 기반)")
 
 isbn_list = []
 single_isbn = st.text_input("🔹 단일 ISBN 입력", placeholder="예: 9788936434267")
@@ -151,14 +148,17 @@ if isbn_list:
     full_text = "\n\n".join(marc_results)
     st.download_button("📦 모든 MARC 다운로드", data=full_text, file_name="marc_output.txt", mime="text/plain")
 
-example_csv = "ISBN,등록기호,등록번호,별치기호\n'9791173473968,JUT,12345,TCH\n"
+# 📄 예시파일 다운로드
+example_csv = "ISBN,등록기호,등록번호,별치기호\n9791173473968,JUT,12345,TCH\n"
 buffer = io.BytesIO()
 buffer.write(example_csv.encode("utf-8-sig"))
 buffer.seek(0)
 st.download_button("📄 서식 파일 다운로드", data=buffer, file_name="isbn_template.csv", mime="text/csv")
 
+# 🔗 출처 표시
 st.markdown("""
 <div style='text-align: center; font-size: 14px; color: gray;'>
-📚 <strong>도서 DB 제공</strong> : <a href='https://www.aladin.co.kr' target='_blank'>알라딘 인터넷서점(www.aladin.co.kr)</a>
+📚 <strong>도서 DB 제공</strong> : <a href='https://www.aladin.co.kr' target='_blank'>알라딘 인터넷서점(www.aladin.co.kr)</a><br>
+🏷️ <strong>키워드 제공</strong> : <a href='https://bnk.kpipa.or.kr' target='_blank'>출판유통통합전산망</a>
 </div>
 """, unsafe_allow_html=True)
