@@ -5,6 +5,7 @@ import openai
 import xml.etree.ElementTree as ET
 import re
 import io
+from bs4 import BeautifulSoup
 
 # ✅ API 키들 (secrets.toml에서 불러오기)
 openai_key = st.secrets["api_keys"]["openai_key"]
@@ -38,20 +39,6 @@ KDC: 813.7"""
         st.warning(f"GPT 오류: {e}")
     return "000"
 
-# 📚 NLK 기반 정보 가져오기
-def fetch_from_nlk(isbn, nlk_key):
-    url = f"https://www.nl.go.kr/seoji/SearchApi.do?cert_key={nlk_key}&result_style=xml&page_no=1&page_size=10&isbn={isbn}"
-    try:
-        res = requests.get(url, timeout=10)
-        res.encoding = 'utf-8'
-        root = ET.fromstring(res.text)
-        doc = root.find('.//docs/e')
-        title = doc.findtext('TITLE')
-        author = doc.findtext('AUTHOR')
-        return title, author
-    except:
-        return "제목없음", "지은이 미생"
-
 # 📚 부가기호 ADDCODE 추출 함수
 def fetch_additional_code_from_nlk(isbn):
     try:
@@ -60,7 +47,7 @@ def fetch_additional_code_from_nlk(isbn):
         res.encoding = 'utf-8'
         root = ET.fromstring(res.text)
 
-        doc = root.find('.//docs/e')  # 핵심! 여기가 잘못됐던 부분
+        doc = root.find('.//docs/e')
         if doc is not None:
             add_code = doc.findtext('EA_ADD_CODE')
             return add_code.strip() if add_code else ""
@@ -68,7 +55,32 @@ def fetch_additional_code_from_nlk(isbn):
         print(f"📡 부가기호 가져오기 오류: {e}")
     return ""
 
+# 📚 KPIPA 키워드 추출 함수
+def fetch_kpipa_keywords(isbn):
+    try:
+        search_url = f"https://bnk.kpipa.or.kr/home/v3/search/bookSearch.do"
+        params = {"searchVal": isbn}
+        res = requests.get(search_url, params=params, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
 
+        detail_link_tag = soup.select_one("a[href*='addition/adiPromoMetaDataView']")
+        if not detail_link_tag:
+            return []
+
+        detail_href = detail_link_tag["href"]
+        detail_url = "https://bnk.kpipa.or.kr" + detail_href
+        res_detail = requests.get(detail_url, timeout=10)
+        soup_detail = BeautifulSoup(res_detail.text, "html.parser")
+
+        keyword_section = soup_detail.find("strong", string="키워드")
+        if keyword_section and keyword_section.parent:
+            text = keyword_section.parent.get_text(strip=True)
+            keywords = re.findall(r"#([^\s#]+)", text)
+            return keywords
+        return []
+    except Exception as e:
+        print(f"⚠️ 키워드 추출 오류: {e}")
+        return []
 
 # 📚 알라딘 기반 MARC 생성
 @st.cache_data(show_spinner=False)
@@ -84,13 +96,9 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     price = data.get("priceStandard")
     series_title = data.get("seriesInfo", {}).get("seriesName", "").strip()
 
-    # 부가기호 가져오기
     add_code = fetch_additional_code_from_nlk(isbn)
-
-    # GPT 기반 KDC 추천
     kdc = recommend_kdc(title, author, api_key=openai_key)
 
-    # 📌 MARC 필드 작성
     marc = f"=007  ta\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
     if add_code:
         marc += f"$g{add_code}"
@@ -107,17 +115,18 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
         if copy_symbol:
             marc += f"$f{copy_symbol}"
 
+    # 📌 653 필드 키워드
+    keywords = fetch_kpipa_keywords(isbn)
+    if keywords:
+        marc += f"\n=653  \\$a" + "$a".join(keywords[:5])
+
     return marc
 
-
-
-
-# 🎛️ UI 영역
-st.title("📚 ISBN to MARC 변환기 (GPT 기반 KDC 추천)")
+# 🎛️ UI
+st.title("📚 ISBN to MARC 변환기 (GPT KDC + KPIPA 키워드)")
 
 isbn_list = []
 single_isbn = st.text_input("🔹 단일 ISBN 입력", placeholder="예: 9788936434267")
-
 if single_isbn.strip():
     isbn_list = [[single_isbn.strip(), "", "", ""]]
 
@@ -142,14 +151,12 @@ if isbn_list:
     full_text = "\n\n".join(marc_results)
     st.download_button("📦 모든 MARC 다운로드", data=full_text, file_name="marc_output.txt", mime="text/plain")
 
-# 📄 예시파일 다운로드
 example_csv = "ISBN,등록기호,등록번호,별치기호\n'9791173473968,JUT,12345,TCH\n"
 buffer = io.BytesIO()
 buffer.write(example_csv.encode("utf-8-sig"))
 buffer.seek(0)
 st.download_button("📄 서식 파일 다운로드", data=buffer, file_name="isbn_template.csv", mime="text/csv")
 
-# 🔗 출처 표시
 st.markdown("""
 <div style='text-align: center; font-size: 14px; color: gray;'>
 📚 <strong>도서 DB 제공</strong> : <a href='https://www.aladin.co.kr' target='_blank'>알라딘 인터넷서점(www.aladin.co.kr)</a>
