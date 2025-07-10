@@ -5,14 +5,13 @@ import openai
 import xml.etree.ElementTree as ET
 import re
 import io
-from bs4 import BeautifulSoup
 
 # ✅ API 키들 (secrets.toml에서 불러오기)
 openai_key = st.secrets["api_keys"]["openai_key"]
 aladin_key = st.secrets["api_keys"]["aladin_key"]
 nlk_key = st.secrets["api_keys"]["nlk_key"]
 
-# ✅ GPT 기반 KDC 추천
+# ✅ GPT 기반 KDC 추천 (openai>=1.0 방식)
 @st.cache_data(show_spinner=False)
 def recommend_kdc(title, author, api_key):
     try:
@@ -38,7 +37,6 @@ KDC: 813.7"""
     except Exception as e:
         st.warning(f"GPT 오류: {e}")
     return "000"
-
 
 # 📚 NLK 기반 정보 가져오기
 def fetch_from_nlk(isbn, nlk_key):
