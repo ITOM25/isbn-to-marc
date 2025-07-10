@@ -5,36 +5,37 @@ import openai
 import xml.etree.ElementTree as ET
 import re
 import io
-from bs4 import BeautifulSoup
+from konlpy.tag import Okt
+from collections import Counter
 
 # ✅ API 키들 (secrets.toml에서 불러오기)
 openai_key = st.secrets["api_keys"]["openai_key"]
 aladin_key = st.secrets["api_keys"]["aladin_key"]
 nlk_key = st.secrets["api_keys"]["nlk_key"]
 
-# ✅ GPT 기반 KDC 추천 (openai>=1.0 방식)
+okt = Okt()
+
+def extract_keywords_from_text(text, top_n=3):
+    nouns = okt.nouns(text)
+    filtered = [n for n in nouns if len(n) > 1]
+    freq = Counter(filtered)
+    return [kw for kw, _ in freq.most_common(top_n)]
+
+# ✅ GPT 기반 KDC 추천
 @st.cache_data(show_spinner=False)
 def recommend_kdc(title, author, api_key):
     try:
         client = openai.OpenAI(api_key=api_key)
-
-        prompt = f"""도서 제목: {title}
-저자: {author}
-이 책의 주제를 고려하여 한국십진분류(KDC) 번호 하나를 추천해 주세요.
-정확한 숫자만 아래 형식으로 간단히 응답해 주세요:
-KDC: 813.7"""
-
+        prompt = f"""도서 제목: {title}\n저자: {author}\n이 책의 주제를 고려하여 한국십진분류(KDC) 번호 하나를 추천해 주세요.\n정확한 숫자만 아래 형식으로 간단히 응답해 주세요:\nKDC: 813.7"""
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
         )
-
         answer = response.choices[0].message.content
         for line in answer.strip().splitlines():
             if "KDC:" in line:
                 return line.replace("KDC:", "").strip()
-
     except Exception as e:
         st.warning(f"GPT 오류: {e}")
     return "000"
@@ -55,36 +56,10 @@ def fetch_additional_code_from_nlk(isbn):
         print(f"📡 부가기호 오류: {e}")
     return ""
 
-# 📚 KPIPA 키워드 추출 함수
-@st.cache_data(show_spinner=False)
-def fetch_kpipa_keywords(isbn):
-    try:
-        search_url = "https://bnk.kpipa.or.kr/home/v3/addition/adiPromoTotalList"
-        data = {"searchCondition": "isbn", "searchKeyword": isbn}
-        res = requests.post(search_url, data=data, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
-        result = soup.select_one("table tbody tr td a")
-        if not result or not result.get("href"):
-            return []
-
-        detail_href = result["href"]
-        detail_url = "https://bnk.kpipa.or.kr" + detail_href
-
-        res2 = requests.get(detail_url, timeout=10)
-        soup2 = BeautifulSoup(res2.text, "html.parser")
-        section = soup2.find("strong", string=re.compile("키워드"))
-        if not section:
-            return []
-        lis = section.find_next_sibling("ul").find_all("li")
-        return [li.get_text(strip=True).lstrip("#") for li in lis if li.get_text(strip=True)]
-    except Exception as e:
-        print(f"⚠️ KPIPA 키워드 오류: {e}")
-        return []
-
 # 📚 알라딘 기반 MARC 생성
 @st.cache_data(show_spinner=False)
 def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
-    url = f"https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx?ttbkey={aladin_key}&itemIdType=ISBN&ItemId={isbn}&output=js&Version=20131101"
+    url = f"https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx?ttbkey={aladin_key}&itemIdType=ISBN&ItemId={isbn}&output=js&Version=20131101&optResult=ebookList,reviewList"
     response = requests.get(url, verify=False)
     data = response.json().get("item", [{}])[0]
 
@@ -94,10 +69,19 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     pubdate = data.get("pubDate", "2025")[:4]
     price = data.get("priceStandard")
     series_title = data.get("seriesInfo", {}).get("seriesName", "").strip()
+    category = data.get("categoryName", "")
+    description = data.get("description", "")
+    toc = data.get("subInfo", {}).get("toc", "")
 
     add_code = fetch_additional_code_from_nlk(isbn)
     kdc = recommend_kdc(title, author, api_key=openai_key)
-    keywords = fetch_kpipa_keywords(isbn)
+
+    # 653 키워드 추출
+    keyword_set = set()
+    if category:
+        keyword_set.add(category)
+    keyword_set.update(extract_keywords_from_text(description, 2))
+    keyword_set.update(extract_keywords_from_text(toc, 2))
 
     marc = f"=007  ta\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
     if add_code:
@@ -106,8 +90,8 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
         marc += f":$c\\{price}"
     if kdc and kdc != "000":
         marc += f"\n=056  \\$a{kdc}$26"
-    if keywords:
-        marc += f"\n=653  \\$a" + "$a".join(keywords)
+    if keyword_set:
+        marc += f"\n=653  \\" + "".join([f"$a{kw}" for kw in list(keyword_set)[:4]])
     if series_title:
         marc += f"\n=490  10$a{series_title} ;$v\n=830  \\0$a{series_title} ;$v"
     if price:
@@ -120,7 +104,7 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     return marc
 
 # 🎛️ UI 영역
-st.title("📚 ISBN to MARC 변환기 (GPT + KPIPA 기반)")
+st.title("📚 ISBN to MARC 변환기 (알라딘 기반 키워드 추출)")
 
 isbn_list = []
 single_isbn = st.text_input("🔹 단일 ISBN 입력", placeholder="예: 9788936434267")
@@ -148,17 +132,14 @@ if isbn_list:
     full_text = "\n\n".join(marc_results)
     st.download_button("📦 모든 MARC 다운로드", data=full_text, file_name="marc_output.txt", mime="text/plain")
 
-# 📄 예시파일 다운로드
 example_csv = "ISBN,등록기호,등록번호,별치기호\n9791173473968,JUT,12345,TCH\n"
 buffer = io.BytesIO()
 buffer.write(example_csv.encode("utf-8-sig"))
 buffer.seek(0)
 st.download_button("📄 서식 파일 다운로드", data=buffer, file_name="isbn_template.csv", mime="text/csv")
 
-# 🔗 출처 표시
 st.markdown("""
 <div style='text-align: center; font-size: 14px; color: gray;'>
-📚 <strong>도서 DB 제공</strong> : <a href='https://www.aladin.co.kr' target='_blank'>알라딘 인터넷서점(www.aladin.co.kr)</a><br>
-🏷️ <strong>키워드 제공</strong> : <a href='https://bnk.kpipa.or.kr' target='_blank'>출판유통통합전산망</a>
+📚 <strong>도서 DB 제공</strong> : <a href='https://www.aladin.co.kr' target='_blank'>알라딘 인터넷서점(www.aladin.co.kr)</a>
 </div>
 """, unsafe_allow_html=True)
