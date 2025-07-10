@@ -136,7 +136,6 @@ if isbn_list:
         isbn, reg_mark, reg_no, copy_symbol = row
         marc = fetch_book_data_from_aladin(isbn, reg_mark, reg_no, copy_symbol)
         if marc:
-            marc = f"=007  ta\n" + marc
             st.code(marc, language="text")
             marc_results.append(marc)
 
