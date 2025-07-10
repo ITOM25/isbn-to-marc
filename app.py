@@ -85,10 +85,14 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     series_title = data.get("seriesInfo", {}).get("seriesName", "").strip()
 
     kdc = recommend_kdc(title, author, api_key=openai_key)
+    add_code = fetch_additional_code_from_nlk(isbn)  # 부가기호 가져오기
 
     marc = f"=001  {isbn}\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
+    if add_code:
+        marc += f"$g{add_code}"
     if price:
         marc += f":$c\\{price}"
+
     if kdc and kdc != "000":
         marc += f"\n=056  \\$a{kdc}$26"
     if series_title:
@@ -101,6 +105,7 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
             marc += f"$f{copy_symbol}"
 
     return marc
+
 
 # 🎛️ UI 영역
 st.title("📚 ISBN to MARC 변환기 (GPT 기반 KDC 추천)")
