@@ -15,25 +15,30 @@ nlk_key = st.secrets["api_keys"]["nlk_key"]
 # ✅ GPT 기반 KDC 추천
 @st.cache_data(show_spinner=False)
 def recommend_kdc(title, author, api_key):
-    prompt = f"""도서 제목: {title}
+    try:
+        client = openai.OpenAI(api_key=api_key)
+
+        prompt = f"""도서 제목: {title}
 저자: {author}
 이 책의 주제를 고려하여 한국십진분류(KDC) 번호 하나를 추천해 주세요.
 정확한 숫자만 아래 형식으로 간단히 응답해 주세요:
 KDC: 813.7"""
-    try:
-        openai.api_key = api_key
-        response = openai.ChatCompletion.create(
+
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
         )
+
         answer = response.choices[0].message.content
         for line in answer.strip().splitlines():
             if "KDC:" in line:
                 return line.replace("KDC:", "").strip()
+
     except Exception as e:
         st.warning(f"GPT 오류: {e}")
     return "000"
+
 
 # 📚 NLK 기반 정보 가져오기
 def fetch_from_nlk(isbn, nlk_key):
