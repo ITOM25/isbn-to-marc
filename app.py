@@ -108,6 +108,7 @@ if isbn_list:
         isbn, reg_mark, reg_no, copy_symbol = row
         marc = fetch_book_data_from_aladin(isbn, reg_mark, reg_no, copy_symbol)
         if marc:
+            marc = f"=007  $a ta\n" + marc
             st.code(marc, language="text")
             marc_results.append(marc)
 
@@ -127,6 +128,3 @@ st.markdown("""
 📚 <strong>도서 DB 제공</strong> : <a href='https://www.aladin.co.kr' target='_blank'>알라딘 인터넷서점(www.aladin.co.kr)</a>
 </div>
 """, unsafe_allow_html=True)
-
-
-# 🔁 GPT 최신 버전 테스트용 주석
