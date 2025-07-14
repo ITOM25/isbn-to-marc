@@ -15,14 +15,14 @@ nlk_key = st.secrets["api_keys"]["nlk_key"]
 
 okt = Okt()
 
+# 🔎 텍스트에서 키워드 추출
 def extract_keywords_from_text(text, top_n=3):
     nouns = okt.nouns(text)
     filtered = [n for n in nouns if len(n) > 1]
     freq = Counter(filtered)
     return [kw for kw, _ in freq.most_common(top_n)]
 
-# ✅ GPT 기반 KDC 추천
-@st.cache_data(show_spinner=False)
+# 🔧 GPT KDC 추천 (캐시 X)
 def recommend_kdc(title, author, api_key):
     try:
         client = openai.OpenAI(api_key=api_key)
@@ -37,15 +37,15 @@ def recommend_kdc(title, author, api_key):
             if "KDC:" in line:
                 return line.replace("KDC:", "").strip()
     except Exception as e:
-        st.warning(f"GPT 오류: {e}")
+        st.warning(f"🧠 GPT 오류: {e}")
     return "000"
 
-# 📚 부가기호 ADDCODE 추출 함수
-@st.cache_data(show_spinner=False)
+# 📡 국립중앙도서관 부가기호 (캐시 X)
 def fetch_additional_code_from_nlk(isbn):
     try:
         url = f"https://www.nl.go.kr/seoji/SearchApi.do?cert_key={nlk_key}&result_style=xml&page_no=1&page_size=10&isbn={isbn}"
         res = requests.get(url, timeout=10)
+        res.raise_for_status()
         res.encoding = 'utf-8'
         root = ET.fromstring(res.text)
         doc = root.find('.//docs/e')
@@ -53,15 +53,20 @@ def fetch_additional_code_from_nlk(isbn):
             add_code = doc.findtext('EA_ADD_CODE')
             return add_code.strip() if add_code else ""
     except Exception as e:
-        print(f"📡 부가기호 오류: {e}")
+        st.warning(f"📡 국중API 부가기호 오류: {e}")
     return ""
 
-# 📚 알라딘 기반 MARC 생성
+# 📚 알라딘 기반 MARC 생성 (캐시 O)
 @st.cache_data(show_spinner=False)
 def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
-    url = f"https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx?ttbkey={aladin_key}&itemIdType=ISBN&ItemId={isbn}&output=js&Version=20131101&optResult=ebookList,reviewList"
-    response = requests.get(url, verify=False)
-    data = response.json().get("item", [{}])[0]
+    try:
+        url = f"https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx?ttbkey={aladin_key}&itemIdType=ISBN&ItemId={isbn}&output=js&Version=20131101&optResult=ebookList,reviewList"
+        response = requests.get(url, verify=False, timeout=10)
+        response.raise_for_status()
+        data = response.json().get("item", [{}])[0]
+    except Exception as e:
+        st.error(f"🚨 알라딘 API 오류: {e}")
+        return ""
 
     title = data.get("title", "제목없음")
     author = data.get("author", "저자미생")
@@ -83,6 +88,7 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     keyword_set.update(extract_keywords_from_text(description, 2))
     keyword_set.update(extract_keywords_from_text(toc, 2))
 
+    # MARC 조립
     marc = f"=007  ta\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
     if add_code:
         marc += f"$g{add_code}"
@@ -104,7 +110,7 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     return marc
 
 # 🎛️ UI 영역
-st.title("📚 ISBN to MARC 변환기 (알라딘 기반 키워드 추출)")
+st.title("📚 ISBN to MARC 변환기 (알라딘 + 국립중앙도서관 + GPT)")
 
 isbn_list = []
 single_isbn = st.text_input("🔹 단일 ISBN 입력", placeholder="예: 9788936434267")
@@ -132,6 +138,7 @@ if isbn_list:
     full_text = "\n\n".join(marc_results)
     st.download_button("📦 모든 MARC 다운로드", data=full_text, file_name="marc_output.txt", mime="text/plain")
 
+# 📄 템플릿 예시 다운로드
 example_csv = "ISBN,등록기호,등록번호,별치기호\n9791173473968,JUT,12345,TCH\n"
 buffer = io.BytesIO()
 buffer.write(example_csv.encode("utf-8-sig"))
