@@ -231,7 +231,14 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
             line += f"$f{copy_symbol}"
         marc_lines.append(line)
 
+    # ── 여기에 추가: 모든 태그(=###)를 숫자 오름차순으로 정렬
+    import re
+    marc_lines.sort(
+        key=lambda line: int(re.match(r"=(\d+)", line).group(1))
+    )
+
     return "\n".join(marc_lines)
+
 
 
 # 🎛️ Streamlit UI
