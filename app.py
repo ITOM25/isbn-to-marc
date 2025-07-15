@@ -5,45 +5,29 @@ import openai
 import xml.etree.ElementTree as ET
 import re
 import io
-<<<<<<< HEAD
-from konlpy.tag import Okt
 from collections import Counter
 
-# ✅ API 키들 (secrets.toml에서 불러오기)
-=======
-from collections import Counter
-
-# ✅ API 키들 (secrets.toml에서 불러오기)
+# ✅ API 키 (secrets.toml에서 불러오기)
 openai_key = st.secrets["api_keys"]["openai_key"]
 aladin_key = st.secrets["api_keys"]["aladin_key"]
 nlk_key = st.secrets["api_keys"]["nlk_key"]
 
-
-<<<<<<< HEAD
-okt = Okt()
-
-# 🔎 텍스트에서 키워드 추출
-def extract_keywords_from_text(text, top_n=3):
-    nouns = okt.nouns(text)
-    filtered = [n for n in nouns if len(n) > 1]
-    freq = Counter(filtered)
-    return [kw for kw, _ in freq.most_common(top_n)]
-
-# 🔧 GPT KDC 추천 (캐시 X)
-=======
-# 🔎 간단한 키워드 추출 (konlpy 없이)
+# 🔎 키워드 추출 (konlpy 없이)
 def extract_keywords_from_text(text, top_n=3):
     words = re.findall(r'\b[\w가-힣]{2,}\b', text)
     filtered = [w for w in words if len(w) > 1]
     freq = Counter(filtered)
     return [kw for kw, _ in freq.most_common(top_n)]
 
-# 🧠 GPT KDC 추천
->>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
+# 🔧 GPT 기반 KDC 추천
 def recommend_kdc(title, author, api_key):
     try:
         client = openai.OpenAI(api_key=api_key)
-        prompt = f"""도서 제목: {title}\n저자: {author}\n이 책의 주제를 고려하여 한국십진분류(KDC) 번호 하나를 추천해 주세요.\n정확한 숫자만 아래 형식으로 간단히 응답해 주세요:\nKDC: 813.7"""
+        prompt = f"""도서 제목: {title}
+저자: {author}
+이 책의 주제를 고려하여 한국십진분류(KDC) 번호 하나를 추천해 주세요.
+정확한 숫자만 아래 형식으로 간단히 응답해 주세요:
+KDC: 813.7"""
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
@@ -57,11 +41,7 @@ def recommend_kdc(title, author, api_key):
         st.warning(f"🧠 GPT 오류: {e}")
     return "000"
 
-<<<<<<< HEAD
-# 📡 국립중앙도서관 부가기호 (캐시 X)
-=======
 # 📡 부가기호 추출 (국립중앙도서관)
->>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
 def fetch_additional_code_from_nlk(isbn):
     try:
         url = f"https://www.nl.go.kr/seoji/SearchApi.do?cert_key={nlk_key}&result_style=xml&page_no=1&page_size=10&isbn={isbn}"
@@ -74,17 +54,10 @@ def fetch_additional_code_from_nlk(isbn):
             add_code = doc.findtext('EA_ADD_CODE')
             return add_code.strip() if add_code else ""
     except Exception as e:
-<<<<<<< HEAD
-        st.warning(f"📡 국중API 부가기호 오류: {e}")
-    return ""
-
-# 📚 알라딘 기반 MARC 생성 (캐시 O)
-=======
         st.warning(f"📡 국중API 오류: {e}")
     return ""
 
-# 📚 알라딘 API + MARC 생성
->>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
+# 📚 MARC 생성 (알라딘 + GPT + 국중)
 @st.cache_data(show_spinner=False)
 def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     try:
@@ -97,13 +70,8 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
         return ""
 
     title = data.get("title", "제목없음")
-<<<<<<< HEAD
-    author = data.get("author", "저자미생")
-    publisher = data.get("publisher", "출판사미생")
-=======
     author = data.get("author", "저자미상")
     publisher = data.get("publisher", "출판사미상")
->>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
     pubdate = data.get("pubDate", "2025")[:4]
     price = data.get("priceStandard")
     series_title = data.get("seriesInfo", {}).get("seriesName", "").strip()
@@ -114,46 +82,36 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     add_code = fetch_additional_code_from_nlk(isbn)
     kdc = recommend_kdc(title, author, api_key=openai_key)
 
-    # 653 키워드 추출
+    # 653 키워드
     keyword_set = set()
     if category:
         keyword_set.add(category)
     keyword_set.update(extract_keywords_from_text(description, 2))
     keyword_set.update(extract_keywords_from_text(toc, 2))
 
-if category:
-    keyword_set.add(category)
-keyword_set.update(extract_keywords_from_text(description, 2))
-keyword_set.update(extract_keywords_from_text(toc, 2))
+    # MARC 조립
+    marc = f"=007  ta\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
+    if add_code:
+        marc += f"$g{add_code}"
+    if price:
+        marc += f":$c\\{price}"
+    if kdc and kdc != "000":
+        marc += f"\n=056  \\$a{kdc}$26"
+    if keyword_set:
+        marc += f"\n=653  \\" + "".join([f"$a{kw}" for kw in list(keyword_set)[:4]])
+    if series_title:
+        marc += f"\n=490  10$a{series_title} ;$v\n=830  \\0$a{series_title} ;$v"
+    if price:
+        marc += f"\n=950  0\\$b\\{price}"
+    if reg_mark or reg_no or copy_symbol:
+        marc += f"\n=049  0\\$I{reg_mark}{reg_no}"
+        if copy_symbol:
+            marc += f"$f{copy_symbol}"
 
-marc = f"=007  ta\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
-if add_code:
-    marc += f"$g{add_code}"
-if price:
-    marc += f":$c\\{price}"
-if kdc and kdc != "000":
-    marc += f"\n=056  \\$a{kdc}$26"
-if keyword_set:
-    marc += f"\n=653  \\" + "".join([f"$a{kw}" for kw in list(keyword_set)[:4]])
-if series_title:
-    marc += f"\n=490  10$a{series_title} ;$v\n=830  \\0$a{series_title} ;$v"
-if price:
-    marc += f"\n=950  0\\$b\\{price}"
-if reg_mark or reg_no or copy_symbol:
-    marc += f"\n=049  0\\$I{reg_mark}{reg_no}"
-    if copy_symbol:
-        marc += f"$f{copy_symbol}"
+    return marc
 
-return marc
-
-
-<<<<<<< HEAD
-# 🎛️ UI 영역
-st.title("📚 ISBN to MARC 변환기 (알라딘 + 국립중앙도서관 + GPT)")
-=======
 # 🎛️ Streamlit UI
 st.title("📚 ISBN to MARC 변환기 (Cloud용, konlpy 없이)")
->>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
 
 isbn_list = []
 single_isbn = st.text_input("🔹 단일 ISBN 입력", placeholder="예: 9788936434267")
@@ -181,16 +139,14 @@ if isbn_list:
     full_text = "\n\n".join(marc_results)
     st.download_button("📦 모든 MARC 다운로드", data=full_text, file_name="marc_output.txt", mime="text/plain")
 
-<<<<<<< HEAD
 # 📄 템플릿 예시 다운로드
-=======
->>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
 example_csv = "ISBN,등록기호,등록번호,별치기호\n9791173473968,JUT,12345,TCH\n"
 buffer = io.BytesIO()
 buffer.write(example_csv.encode("utf-8-sig"))
 buffer.seek(0)
 st.download_button("📄 서식 파일 다운로드", data=buffer, file_name="isbn_template.csv", mime="text/csv")
 
+# ⬇️ 하단 마크
 st.markdown("""
 <div style='text-align: center; font-size: 14px; color: gray;'>
 📚 <strong>도서 DB 제공</strong> : <a href='https://www.aladin.co.kr' target='_blank'>알라딘 인터넷서점(www.aladin.co.kr)</a>
