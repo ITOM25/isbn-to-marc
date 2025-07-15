@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 import re
 import io
 from collections import Counter
+from bs4 import BeautifulSoup
 
 # ✅ API 키 (secrets.toml에서 불러오기)
 openai_key = st.secrets["api_keys"]["openai_key"]
@@ -18,6 +19,10 @@ def extract_keywords_from_text(text, top_n=7):
     filtered = [w for w in words if len(w) > 1]
     freq = Counter(filtered)
     return [kw for kw, _ in freq.most_common(top_n)]
+
+def clean_keywords(words):
+    stopwords = {"아주", "가지", "필요한", "등", "위해", "것", "수", "더", "이런", "있다", "된다", "한다"}
+    return [w for w in words if w not in stopwords and len(w) > 1]
 
 # 📚 카테고리 키워드 추출
 def extract_category_keywords(category_str):
@@ -67,38 +72,74 @@ def fetch_additional_code_from_nlk(isbn):
         st.warning(f"📡 국중API 오류: {e}")
     return ""
 
+# 🔤 언어 감지 및 041, 546 생성
+ISDS_LANGUAGE_CODES = {
+    'kor': '한국어', 'eng': '영어', 'jpn': '일본어', 'chi': '중국어', 'rus': '러시아어',
+    'ara': '아랍어', 'fre': '프랑스어', 'ger': '독일어', 'ita': '이탈리아어', 'spa': '스페인어',
+    'und': '알 수 없음'
+}
+
+def detect_language(text):
+    text = re.sub(r'[\s\W_]+', '', text)
+    if not text:
+        return 'und'
+    first_char = text[0]
+    if '\uac00' <= first_char <= '\ud7a3':
+        return 'kor'
+    elif '\u3040' <= first_char <= '\u30ff':
+        return 'jpn'
+    elif '\u4e00' <= first_char <= '\u9fff':
+        return 'chi'
+    elif '\u0400' <= first_char <= '\u04FF':
+        return 'rus'
+    elif 'a' <= first_char.lower() <= 'z':
+        return 'eng'
+    else:
+        return 'und'
+
+def generate_546_from_041_kormarc(marc_041: str) -> str:
+    a_codes, h_code = [], None
+    for part in marc_041.split():
+        if part.startswith("$a"):
+            a_codes.append(part[2:])
+        elif part.startswith("$h"):
+            h_code = part[2:]
+    if len(a_codes) == 1:
+        a_lang = ISDS_LANGUAGE_CODES.get(a_codes[0], "알 수 없음")
+        if h_code:
+            h_lang = ISDS_LANGUAGE_CODES.get(h_code, "알 수 없음")
+            return f"{a_lang}로 씀, 원저는 {h_lang}임"
+        else:
+            return f"{a_lang}로 씀"
+    elif len(a_codes) > 1:
+        langs = [ISDS_LANGUAGE_CODES.get(code, "알 수 없음") for code in a_codes]
+        return f"{'、'.join(langs)} 병기"
+    return "언어 정보 없음"
+
+def crawl_aladin_original_and_price(isbn13):
+    url = f"https://www.aladin.co.kr/shop/wproduct.aspx?ISBN={isbn13}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+        original = soup.select_one("div.info_original")
+        price = soup.select_one("span.price2")
+        return {
+            "original_title": original.text.strip() if original else "",
+            "price": price.text.strip().replace("정가 : ", "").replace("원", "").replace(",", "").strip() if price else ""
+        }
+    except:
+        return {}
+
 # 📄 653 필드 키워드 생성
 def build_653_field(title, description, toc, raw_category):
-    def extract_keywords_from_text(text, top_n=10):
-        words = re.findall(r'\b[\w가-힣]{2,}\b', text)
-        filtered = [w for w in words if len(w) > 1]
-        freq = Counter(filtered)
-        return [kw for kw, _ in freq.most_common(top_n)]
-
-    def clean_keywords(words):
-        stopwords = {"아주", "가지", "필요한", "등", "위해", "것", "수", "더", "이런", "있다", "된다", "한다"}
-        return [w for w in words if w not in stopwords and len(w) > 1]
-
-    def extract_categories(raw_category):
-        if not raw_category:
-            return []
-        lines = raw_category.strip().split("\n")
-        last_keywords = []
-        for line in lines:
-            parts = [p.strip() for p in line.split(">")]
-            if parts:
-                last_keywords.append(parts[-1])
-        return last_keywords
-
-    category_keywords = extract_categories(raw_category)
+    category_keywords = extract_category_keywords(raw_category)
     title_kw = clean_keywords(extract_keywords_from_text(title, 3))
     desc_kw = clean_keywords(extract_keywords_from_text(description, 4))
     toc_kw = clean_keywords(extract_keywords_from_text(toc, 5))
     body_keywords = list(dict.fromkeys(title_kw + desc_kw + toc_kw))[:7]
-
     combined = category_keywords + body_keywords
     final_keywords = combined[:8]
-
     if final_keywords:
         return "=653  \\" + "".join([f"$a{kw}" for kw in final_keywords])
     return ""
@@ -119,37 +160,55 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     author = data.get("author", "저자미상")
     publisher = data.get("publisher", "출판사미상")
     pubdate = data.get("pubDate", "2025")[:4]
-    price = data.get("priceStandard")
-    series_title = data.get("seriesInfo", {}).get("seriesName", "").strip()
     category = data.get("categoryName", "")
     description = data.get("description", "")
     toc = data.get("subInfo", {}).get("toc", "")
 
-    add_code = fetch_additional_code_from_nlk(isbn)
-    kdc = recommend_kdc(title, author, api_key=openai_key)
-    keywords = build_653_field(title, description, toc, category)
+    crawl_data = crawl_aladin_original_and_price(isbn)
+    original_title = crawl_data.get("original_title", "")
+    price = crawl_data.get("price", "")
 
-    marc = f"=007  ta\n=245  00$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
+    lang_a = detect_language(title)
+    lang_h = detect_language(original_title)
+    tag_041 = f"=041  \\$a{lang_a}" + (f"$h{lang_h}" if original_title else "")
+    tag_546 = f"=546  \\$a{generate_546_from_041_kormarc(tag_041)}"
+    tag_020 = f"=020  \\$c\{price}" if price else ""
+
+    kdc = recommend_kdc(title, author, api_key=openai_key)
+    add_code = fetch_additional_code_from_nlk(isbn)
+    tag_653 = build_653_field(title, description, toc, category)
+
+    marc = f"=007  ta
+=245  00$a{title} /$c{author}
+=260  \\$a서울 :$b{publisher},$c{pubdate}.
+{tag_020}"
     if add_code:
         marc += f"$g{add_code}"
-    if price:
-        marc += f":$c\\{price}"
     if kdc and kdc != "000":
-        marc += f"\n=056  \\$a{kdc}$26"
-    if keywords:
-        marc += f"\n{keywords}"
-    if series_title:
-        marc += f"\n=490  10$a{series_title} ;$v\n=830  \\0$a{series_title} ;$v"
+        marc += f"
+=056  \\$a{kdc}$26"
+    if tag_653:
+        marc += f"
+{tag_653}"
+    if tag_041:
+        marc += f"
+{tag_041}"
+    if tag_546:
+        marc += f"
+{tag_546}"
     if price:
-        marc += f"\n=950  0\\$b\\{price}"
+        marc += f"
+=950  0\$b\{price}"
     if reg_mark or reg_no or copy_symbol:
-        marc += f"\n=049  0\\$I{reg_mark}{reg_no}"
+        marc += f"
+=049  0\$I{reg_mark}{reg_no}"
         if copy_symbol:
             marc += f"$f{copy_symbol}"
+
     return marc
 
 # 🎛️ Streamlit UI
-st.title("📚 ISBN to MARC 변환기 (Cloud용, konlpy 없이)")
+st.title("📚 ISBN to MARC 변환기 (통합버전)")
 
 isbn_list = []
 single_isbn = st.text_input("🔹 단일 ISBN 입력", placeholder="예: 9788936434267")
