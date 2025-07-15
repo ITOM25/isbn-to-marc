@@ -148,36 +148,27 @@ def crawl_aladin_original_and_price(isbn13):
 
 # 📄 653 필드 키워드 생성
 def build_653_field(title, description, toc, raw_category):
-    # 1) 카테고리 마지막 요소만 뽑아 무제한으로
-    category = ""
-    if raw_category:
-        parts = [p.strip() for p in raw_category.split(">") if p.strip()]
-        category = parts[-1] if parts else ""
-    
-    # 2) 제목에서 명사 2개
-    title_kw = clean_keywords(extract_keywords_from_text(title, top_n=2))
-    # 3) 목차에서 명사 5개
-    toc_kw   = clean_keywords(extract_keywords_from_text(toc,   top_n=5))
-    # 4) 설명에서 명사 3개
+    # 1) 카테고리 마지막 요소
+    parts   = [p.strip() for p in raw_category.split(">") if p.strip()]
+    category = parts[-1] if parts else ""
+
+    # 2) 제목에서 명사 2개, 목차 5개, 설명 3개
+    title_kw = clean_keywords(extract_keywords_from_text(title,  top_n=2))
+    toc_kw   = clean_keywords(extract_keywords_from_text(toc,    top_n=5))
     desc_kw  = clean_keywords(extract_keywords_from_text(description, top_n=3))
-    
-    # 5) 제목+목차+설명 중복 제거하며 순서 유지, 상위 개념어 위주로 7개만
+
+    # 3) 순서 유지하며 중복 제거, 최대 7개
     combined = list(dict.fromkeys(title_kw + toc_kw + desc_kw))
     body     = combined[:7]
-    
-    # 6) 최종 배열: [카테고리] + body_keywords
-    final = []
-    if category:
-        final.append(category)
-    final.extend(body)
-    
-    # 7) MARC 653 필드 포맷으로 조립
-    if final:
-        return "=653  \\" + "".join(f"$a{kw}" for kw in final)
-    return ""
+
+    # 4) 카테고리 앞세우기
+    final    = ([category] if category else []) + body
+
+    # 5) 조립
+    return "=653  \\" + "".join(f"$a{kw}" for kw in final) if final else ""
 
 
-# 📚 MARC 생성
+
 # 📚 MARC 생성
 @st.cache_data(show_spinner=False)
 def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
@@ -220,9 +211,9 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     if add_code:
         tag_020 += f"$g{add_code}"
 
-    # 5) KDC·653
+    # — KDC·653 (원칙대로 제목·목차·설명·카테고리를 모두 넘겨 주기)
     kdc     = recommend_kdc(title, author, api_key=openai_key)
-    tag_653 = build_653_field(title, "", "", "")
+    tag_653 = build_653_field(title, description, toc, category)
 
     # 6) MARC 라인 초기화
     marc_lines = [
