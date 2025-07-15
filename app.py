@@ -192,7 +192,9 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     title     = data.get("title",       "제목없음")
     author    = data.get("author",      "저자미상")
     publisher = data.get("publisher",   "출판사미상")
-    pubdate   = data.get("pubDate",     "2025")[:4]
+    pubdate   = data.get("pubDate", "2025")[:4]
+    # — (추가) 카테고리 정보도 꺼내기
+    category  = data.get("categoryName", "")
     # — 가격: TTB API에서 바로 꺼내되, int → str 변환
     raw_price = data.get("priceStandard", "")
     price     = str(raw_price)
