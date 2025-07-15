@@ -82,22 +82,16 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     add_code = fetch_additional_code_from_nlk(isbn)
     kdc = recommend_kdc(title, author, api_key=openai_key)
 
-# 653 키워드 추출
-keyword_set = set()
-if category:
-    keyword_set.add(category)
+    # 653 키워드 추출
+    keyword_set = set()
+    if category:
+        keyword_set.add(category)
 
-# description과 toc에서 키워드 추출 (상위 7개)
-description_keywords = extract_keywords_from_text(description, 7)
-toc_keywords = extract_keywords_from_text(toc, 7)
+    description_keywords = extract_keywords_from_text(description, 7)
+    toc_keywords = extract_keywords_from_text(toc, 7)
 
-keyword_set.update(description_keywords)
-keyword_set.update(toc_keywords)
-
-# 최대 8개까지만 출력
-if keyword_set:
-    marc += f"\n=653  \\" + "".join([f"$a{kw}" for kw in list(keyword_set)[:8]])
-
+    keyword_set.update(description_keywords)
+    keyword_set.update(toc_keywords)
 
     # MARC 조립
     marc = f"=007  ta\n=245  00$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
@@ -108,7 +102,7 @@ if keyword_set:
     if kdc and kdc != "000":
         marc += f"\n=056  \\$a{kdc}$26"
     if keyword_set:
-        marc += f"\n=653  \\" + "".join([f"$a{kw}" for kw in list(keyword_set)[:4]])
+        marc += f"\n=653  \\" + "".join([f"$a{kw}" for kw in list(keyword_set)[:8]])
     if series_title:
         marc += f"\n=490  10$a{series_title} ;$v\n=830  \\0$a{series_title} ;$v"
     if price:
@@ -119,6 +113,7 @@ if keyword_set:
             marc += f"$f{copy_symbol}"
 
     return marc
+
 
 # 🎛️ Streamlit UI
 st.title("📚 ISBN to MARC 변환기 (Cloud용, konlpy 없이)")
