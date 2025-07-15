@@ -121,30 +121,31 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     keyword_set.update(extract_keywords_from_text(description, 2))
     keyword_set.update(extract_keywords_from_text(toc, 2))
 
-<<<<<<< HEAD
-    # MARC 조립
-=======
-    # 📄 MARC 생성
->>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
-    marc = f"=007  ta\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
-    if add_code:
-        marc += f"$g{add_code}"
-    if price:
-        marc += f":$c\\{price}"
-    if kdc and kdc != "000":
-        marc += f"\n=056  \\$a{kdc}$26"
-    if keyword_set:
-        marc += f"\n=653  \\" + "".join([f"$a{kw}" for kw in list(keyword_set)[:4]])
-    if series_title:
-        marc += f"\n=490  10$a{series_title} ;$v\n=830  \\0$a{series_title} ;$v"
-    if price:
-        marc += f"\n=950  0\\$b\\{price}"
-    if reg_mark or reg_no or copy_symbol:
-        marc += f"\n=049  0\\$I{reg_mark}{reg_no}"
-        if copy_symbol:
-            marc += f"$f{copy_symbol}"
+if category:
+    keyword_set.add(category)
+keyword_set.update(extract_keywords_from_text(description, 2))
+keyword_set.update(extract_keywords_from_text(toc, 2))
 
-    return marc
+marc = f"=007  ta\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
+if add_code:
+    marc += f"$g{add_code}"
+if price:
+    marc += f":$c\\{price}"
+if kdc and kdc != "000":
+    marc += f"\n=056  \\$a{kdc}$26"
+if keyword_set:
+    marc += f"\n=653  \\" + "".join([f"$a{kw}" for kw in list(keyword_set)[:4]])
+if series_title:
+    marc += f"\n=490  10$a{series_title} ;$v\n=830  \\0$a{series_title} ;$v"
+if price:
+    marc += f"\n=950  0\\$b\\{price}"
+if reg_mark or reg_no or copy_symbol:
+    marc += f"\n=049  0\\$I{reg_mark}{reg_no}"
+    if copy_symbol:
+        marc += f"$f{copy_symbol}"
+
+return marc
+
 
 <<<<<<< HEAD
 # 🎛️ UI 영역
