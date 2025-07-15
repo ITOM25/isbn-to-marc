@@ -76,11 +76,13 @@ def build_653_field(title, description, toc, raw_category):
         return [kw for kw, _ in freq.most_common(top_n)]
 
     def clean_keywords(words):
-        stopwords = {"아주", "가지", "필요한", "등", "위해", "것", "수", "더", "이런"}
+        stopwords = {"아주", "가지", "필요한", "등", "위해", "것", "수", "더", "이런", "있다", "된다", "한다"}
         return [w for w in words if w not in stopwords and len(w) > 1]
 
     def extract_categories(raw_category):
-        lines = raw_category.split("\n")
+        if not raw_category:
+            return []
+        lines = raw_category.strip().split("\n")
         last_keywords = []
         for line in lines:
             parts = [p.strip() for p in line.split(">")]
@@ -88,23 +90,22 @@ def build_653_field(title, description, toc, raw_category):
                 last_keywords.append(parts[-1])
         return last_keywords
 
-    keyword_set = set()
-
-    # 카테고리 키워드: 제한 없이 추가
-    category_keywords = extract_categories(raw_category)
-    keyword_set.update(category_keywords)
-
-    # 본문 키워드: 최대 7개만 유지
+    # 🎯 키워드 분리 저장
+    category_keywords = extract_categories(raw_category)  # 제한 없음
     title_kw = clean_keywords(extract_keywords_from_text(title, 3))
     desc_kw = clean_keywords(extract_keywords_from_text(description, 4))
     toc_kw = clean_keywords(extract_keywords_from_text(toc, 5))
 
-    body_keywords = list(dict.fromkeys(title_kw + desc_kw + toc_kw))  # 순서 유지 + 중복 제거
-    keyword_set.update(body_keywords[:7])
+    body_keywords = list(dict.fromkeys(title_kw + desc_kw + toc_kw))[:7]  # 순서유지 + 중복제거 + 최대 7
 
-    if keyword_set:
-        return "=653  \\" + "".join([f"$a{kw}" for kw in list(keyword_set)[:8]])
+    # 🧪 결합 (순서: 카테고리 → 본문)
+    combined = category_keywords + body_keywords
+    final_keywords = combined[:8]  # 총 8개 제한
+
+    if final_keywords:
+        return "=653  \\" + "".join([f"$a{kw}" for kw in final_keywords])
     return ""
+
 
 
 # 📚 MARC 생성 (알라딘 + GPT + 국중)
