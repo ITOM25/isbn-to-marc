@@ -184,8 +184,10 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     author    = data.get("author",      "저자미상")
     publisher = data.get("publisher",   "출판사미상")
     pubdate   = data.get("pubDate",     "2025")[:4]
-    price     = data.get("priceStandard", "").strip()
-    # ── API에서 진짜 가격을 잘 받아오는지 확인
+    # — 가격: TTB API에서 바로 꺼내되, int → str 변환
+    raw_price = data.get("priceStandard", "")
+    price     = str(raw_price)
+    # ── (옵션) 디버그: 가격이 제대로 들어오는지 확인
     st.write("▶ priceStandard 확인:", price)
 
     # 3) 언어 태그
