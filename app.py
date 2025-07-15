@@ -8,7 +8,21 @@ import io
 from collections import Counter
 from bs4 import BeautifulSoup
 from openai import OpenAI
+from requests.adapters import HTTPAdapter, Retry
+from concurrent.futures import ThreadPoolExecutor
 
+# ── 한 번만 생성: 국중API용 세션 & 재시도 설정
+_nlk_session = requests.Session()
+_nlk_session.mount(
+    "https://",
+    HTTPAdapter(
+        max_retries=Retry(
+            total=1,                # 재시도 1회
+            backoff_factor=0.5,     # 0.5초 간격
+            status_forcelist=[429,500,502,503,504]
+        )
+    )
+)
 
 # ✅ API 키 (secrets.toml에서 불러오기)
 openai_key = st.secrets["api_keys"]["openai_key"]
@@ -72,20 +86,23 @@ def recommend_kdc(title, author, api_key):
 
 
 # 📡 부가기호 추출 (국립중앙도서관)
-def fetch_additional_code_from_nlk(isbn):
+@st.cache_data(ttl=24*3600)
+def fetch_additional_code_from_nlk(isbn: str) -> str:
+    url = (
+        f"https://www.nl.go.kr/seoji/SearchApi.do?"
+        f"cert_key={nlk_key}&result_style=xml"
+        f"&page_no=1&page_size=1&isbn={isbn}"
+    )
     try:
-        url = f"https://www.nl.go.kr/seoji/SearchApi.do?cert_key={nlk_key}&result_style=xml&page_no=1&page_size=10&isbn={isbn}"
-        res = requests.get(url, timeout=10)
+        res = _nlk_session.get(url, timeout=3)  # 3초만 기다리고
         res.raise_for_status()
-        res.encoding = 'utf-8'
         root = ET.fromstring(res.text)
-        doc = root.find('.//docs/e')
-        if doc is not None:
-            add_code = doc.findtext('EA_ADD_CODE')
-            return add_code.strip() if add_code else ""
-    except Exception as e:
-        st.warning(f"📡 국중API 오류: {e}")
-    return ""
+        doc  = root.find('.//docs/e')
+        return (doc.findtext('EA_ADD_CODE') or "").strip() if doc is not None else ""
+    except Exception:
+        st.warning("⚠️ 국중API 지연, 부가기호는 생략합니다.")
+        return ""
+
 
 # 🔤 언어 감지 및 041, 546 생성
 ISDS_LANGUAGE_CODES = {
@@ -178,18 +195,29 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     import re
 
     # 1) API 호출
-    try:
-        url = (
-            f"https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx?"
-            f"ttbkey={aladin_key}&itemIdType=ISBN&ItemId={isbn}"
-            f"&output=js&Version=20131101"
-        )
-        resp = requests.get(url, verify=False, timeout=10)
-        resp.raise_for_status()
-        data = resp.json().get("item", [{}])[0]
-    except Exception as e:
-        st.error(f"🚨 알라딘 API 오류: {e}")
-        return ""
+    # 1) 알라딘(API)과 국중(API) 부가기호를 동시에 요청하기
+    url = (
+        f"https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx?"
+        f"ttbkey={aladin_key}&itemIdType=ISBN&ItemId={isbn}"
+        f"&output=js&Version=20131101"
+    )
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        # 1-1) 알라딘 API (5초 타임아웃)
+        future_aladin = ex.submit(lambda: requests.get(url, verify=False, timeout=5))
+        # 1-2) 국중 부가기호 (캐시+3초 타임아웃)
+        future_nlk    = ex.submit(fetch_additional_code_from_nlk, isbn)
+
+        # — 알라딘 응답 파싱
+        try:
+            resp = future_aladin.result()
+            resp.raise_for_status()
+            data = resp.json().get("item", [{}])[0]
+        except Exception as e:
+            st.error(f"🚨 알라딘API 오류: {e}")
+            return ""
+
+        # — 국중 부가기호 받기 (실패해도 빈 문자열)
+        add_code = future_nlk.result()
 
     # 2) 기본 필드값들
     title     = data.get("title",       "제목없음")
@@ -215,7 +243,6 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
 
     # 4) 020 필드: ISBN 뒤에 :$c{price}를 항상 붙이기
     tag_020 = f"=020  \\$a{isbn}:$c{price}"
-    add_code = fetch_additional_code_from_nlk(isbn)
     if add_code:
         tag_020 += f"$g{add_code}"
 
