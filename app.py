@@ -82,15 +82,25 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     add_code = fetch_additional_code_from_nlk(isbn)
     kdc = recommend_kdc(title, author, api_key=openai_key)
 
-    # 653 키워드
-    keyword_set = set()
-    if category:
-        keyword_set.add(category)
-    keyword_set.update(extract_keywords_from_text(description, 2))
-    keyword_set.update(extract_keywords_from_text(toc, 2))
+# 653 키워드 추출
+keyword_set = set()
+if category:
+    keyword_set.add(category)
+
+# description과 toc에서 키워드 추출 (상위 7개)
+description_keywords = extract_keywords_from_text(description, 7)
+toc_keywords = extract_keywords_from_text(toc, 7)
+
+keyword_set.update(description_keywords)
+keyword_set.update(toc_keywords)
+
+# 최대 8개까지만 출력
+if keyword_set:
+    marc += f"\n=653  \\" + "".join([f"$a{kw}" for kw in list(keyword_set)[:8]])
+
 
     # MARC 조립
-    marc = f"=007  ta\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
+    marc = f"=007  ta\n=245  00$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
     if add_code:
         marc += f"$g{add_code}"
     if price:
