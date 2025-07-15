@@ -160,76 +160,77 @@ def build_653_field(title, description, toc, raw_category):
     return ""
 
 # 📚 MARC 생성
+# 📚 MARC 생성
 @st.cache_data(show_spinner=False)
 def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
+    import re
+
+    # 1) API 호출
     try:
         url = (
             f"https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx?"
             f"ttbkey={aladin_key}&itemIdType=ISBN&ItemId={isbn}"
-            f"&output=js&Version=20131101&optResult=ebookList,reviewList"
+            f"&output=js&Version=20131101"
         )
-        response = requests.get(url, verify=False, timeout=10)
-        response.raise_for_status()
-        data = response.json().get("item", [{}])[0]
+        resp = requests.get(url, verify=False, timeout=10)
+        resp.raise_for_status()
+        data = resp.json().get("item", [{}])[0]
     except Exception as e:
         st.error(f"🚨 알라딘 API 오류: {e}")
         return ""
 
-    # 기본 정보
-    title       = data.get("title",       "제목없음")
-    author      = data.get("author",      "저자미상")
-    publisher   = data.get("publisher",   "출판사미상")
-    pubdate     = data.get("pubDate",     "2025")[:4]
-    category    = data.get("categoryName","")
-    description = data.get("description", "")
-    toc         = data.get("subInfo", {}).get("toc", "")
+    # 2) 기본 필드값들
+    title     = data.get("title",       "제목없음")
+    author    = data.get("author",      "저자미상")
+    publisher = data.get("publisher",   "출판사미상")
+    pubdate   = data.get("pubDate",     "2025")[:4]
+    price     = data.get("priceStandard", "").strip()
+    # ── API에서 진짜 가격을 잘 받아오는지 확인
+    st.write("▶ priceStandard 확인:", price)
 
-    # 크롤링으로 원제·가격 추출
-    crawl_data     = crawl_aladin_original_and_price(isbn)
-    original_title = crawl_data.get("original_title", "")
-    price          = crawl_data.get("price", "")
-
-    # 언어 태그
-    lang_a = detect_language(title)
-    lang_h = detect_language(original_title)
-    tag_041 = f"=041  \\$a{lang_a}" + (f"$h{lang_h}" if original_title else "")
+    # 3) 언어 태그
+    lang_a  = detect_language(title)
+    lang_h  = detect_language(data.get("title", ""))
+    tag_041 = f"=041  \\$a{lang_a}" + (f"$h{lang_h}" if lang_h != "und" else "")
     tag_546 = f"=546  \\$a{generate_546_from_041_kormarc(tag_041)}"
 
-    # 020 + 부가기호
-    tag_020 = f"=020  \\$a{isbn}" + (f":$c{price}" if price else "")
+    # 4) 020 필드: ISBN 뒤에 :$c{price}를 항상 붙이기
+    tag_020 = f"=020  \\$a{isbn}:$c{price}"
     add_code = fetch_additional_code_from_nlk(isbn)
     if add_code:
         tag_020 += f"$g{add_code}"
 
-    # KDC & 653
+    # 5) KDC·653
     kdc     = recommend_kdc(title, author, api_key=openai_key)
-    tag_653 = build_653_field(title, description, toc, category)
+    tag_653 = build_653_field(title, "", "", "")
 
-    # 기본 MARC 라인
+    # 6) MARC 라인 초기화
     marc_lines = [
         "=007  ta",
         f"=245  00$a{title} /$c{author}",
         f"=260  \\$a서울 :$b{publisher},$c{pubdate}.",
     ]
 
-    # 총서(490·830)
-    series = data.get("seriesInfo", {})  # 알라딘 API 실제 키
+    # 7) 490·830 (총서명 + 항상 ;$v)
+    series = data.get("seriesInfo", {})  
     name   = series.get("seriesName", "").strip()
     vol    = series.get("volume",     "").strip()
     if name:
         marc_lines.append(f"=490  \\$a{name};$v{vol}")
         marc_lines.append(f"=830  \\$a{name};$v{vol}")
 
-    # 020·056·653·041·546·950·049 순서대로 추가
-    marc_lines.append(tag_020)
+    # 8) 나머지 필드 (순서는 정렬에서 처리)
+    marc_lines.append(tag_020)                # =020
+    marc_lines.append(tag_041)                # =041
+    marc_lines.append(tag_546)                # =546
     if kdc and kdc != "000":
-        marc_lines.append(f"=056  \\$a{kdc}$26")
+        marc_lines.append(f"=056  \\$a{kdc}$26")   # =056
     if tag_653:
-        marc_lines.append(tag_653)
-    marc_lines.append(tag_041)
-    marc_lines.append(tag_546)
-    # 950은 무조건 출력 (값이 없으면 빈 \$b)
+        marc_lines.append(tag_653)            # =653
+
+    # 950은 무조건! (비어 있어도 필드만 남김)
     marc_lines.append(f"=950  0\\$b{price}")
+
     # 049: 소장기호
     if reg_mark or reg_no or copy_symbol:
         line = f"=049  0\\$I{reg_mark}{reg_no}"
@@ -237,11 +238,12 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
             line += f"$f{copy_symbol}"
         marc_lines.append(line)
 
-    # 숫자 태그 순서대로 깔끔히 정렬
-    import re
+    # 9) 숫자 오름차순 정렬
     marc_lines.sort(key=lambda L: int(re.match(r"=(\d+)", L).group(1)))
 
+    # 10) 최종 리턴
     return "\n".join(marc_lines)
+
 
 
 
