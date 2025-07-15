@@ -12,12 +12,22 @@ openai_key = st.secrets["api_keys"]["openai_key"]
 aladin_key = st.secrets["api_keys"]["aladin_key"]
 nlk_key = st.secrets["api_keys"]["nlk_key"]
 
-# 🔎 키워드 추출 (konlpy 없이)
-def extract_keywords_from_text(text, top_n=3):
+# 🔍 키워드 추출 (konlpy 없이)
+def extract_keywords_from_text(text, top_n=7):
     words = re.findall(r'\b[\w가-힣]{2,}\b', text)
     filtered = [w for w in words if len(w) > 1]
     freq = Counter(filtered)
     return [kw for kw, _ in freq.most_common(top_n)]
+
+# 📚 카테고리 키워드 추출
+def extract_category_keywords(category_str):
+    keywords = set()
+    lines = category_str.strip().splitlines()
+    for line in lines:
+        parts = [x.strip() for x in line.split('>') if x.strip()]
+        if parts:
+            keywords.add(parts[-1])
+    return list(keywords)
 
 # 🔧 GPT 기반 KDC 추천
 def recommend_kdc(title, author, api_key):
@@ -57,6 +67,15 @@ def fetch_additional_code_from_nlk(isbn):
         st.warning(f"📡 국중API 오류: {e}")
     return ""
 
+# 📄 653 필드 키워드 생성
+def generate_653_keywords(title, description, toc, category):
+    keywords = set()
+    keywords.update(extract_category_keywords(category))
+    keywords.update(extract_keywords_from_text(title, 2))
+    keywords.update(extract_keywords_from_text(description, 7))
+    keywords.update(extract_keywords_from_text(toc, 7))
+    return list(keywords)[:8]
+
 # 📚 MARC 생성 (알라딘 + GPT + 국중)
 @st.cache_data(show_spinner=False)
 def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
@@ -81,19 +100,8 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
 
     add_code = fetch_additional_code_from_nlk(isbn)
     kdc = recommend_kdc(title, author, api_key=openai_key)
+    keywords = generate_653_keywords(title, description, toc, category)
 
-    # 653 키워드 추출
-    keyword_set = set()
-    if category:
-        keyword_set.add(category)
-
-    description_keywords = extract_keywords_from_text(description, 7)
-    toc_keywords = extract_keywords_from_text(toc, 7)
-
-    keyword_set.update(description_keywords)
-    keyword_set.update(toc_keywords)
-
-    # MARC 조립
     marc = f"=007  ta\n=245  00$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
     if add_code:
         marc += f"$g{add_code}"
@@ -101,8 +109,8 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
         marc += f":$c\\{price}"
     if kdc and kdc != "000":
         marc += f"\n=056  \\$a{kdc}$26"
-    if keyword_set:
-        marc += f"\n=653  \\" + "".join([f"$a{kw}" for kw in list(keyword_set)[:8]])
+    if keywords:
+        marc += "\n=653  \\" + "".join([f"$a{kw}" for kw in keywords])
     if series_title:
         marc += f"\n=490  10$a{series_title} ;$v\n=830  \\0$a{series_title} ;$v"
     if price:
@@ -113,7 +121,6 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
             marc += f"$f{copy_symbol}"
 
     return marc
-
 
 # 🎛️ Streamlit UI
 st.title("📚 ISBN to MARC 변환기 (Cloud용, konlpy 없이)")
