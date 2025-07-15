@@ -3,3 +3,7 @@ requests
 python-dotenv
 beautifulsoup4
 openai>=1.0.0
+<<<<<<< HEAD
+=======
+pandas
+>>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)

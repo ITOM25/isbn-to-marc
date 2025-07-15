@@ -5,14 +5,21 @@ import openai
 import xml.etree.ElementTree as ET
 import re
 import io
+<<<<<<< HEAD
 from konlpy.tag import Okt
 from collections import Counter
 
 # ✅ API 키들 (secrets.toml에서 불러오기)
+=======
+from collections import Counter
+
+# ✅ API 키 불러오기
+>>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
 openai_key = st.secrets["api_keys"]["openai_key"]
 aladin_key = st.secrets["api_keys"]["aladin_key"]
 nlk_key = st.secrets["api_keys"]["nlk_key"]
 
+<<<<<<< HEAD
 okt = Okt()
 
 # 🔎 텍스트에서 키워드 추출
@@ -23,6 +30,16 @@ def extract_keywords_from_text(text, top_n=3):
     return [kw for kw, _ in freq.most_common(top_n)]
 
 # 🔧 GPT KDC 추천 (캐시 X)
+=======
+# 🔎 간단한 키워드 추출 (konlpy 없이)
+def extract_keywords_from_text(text, top_n=3):
+    words = re.findall(r'\b[\w가-힣]{2,}\b', text)
+    filtered = [w for w in words if len(w) > 1]
+    freq = Counter(filtered)
+    return [kw for kw, _ in freq.most_common(top_n)]
+
+# 🧠 GPT KDC 추천
+>>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
 def recommend_kdc(title, author, api_key):
     try:
         client = openai.OpenAI(api_key=api_key)
@@ -40,7 +57,11 @@ def recommend_kdc(title, author, api_key):
         st.warning(f"🧠 GPT 오류: {e}")
     return "000"
 
+<<<<<<< HEAD
 # 📡 국립중앙도서관 부가기호 (캐시 X)
+=======
+# 📡 부가기호 추출 (국립중앙도서관)
+>>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
 def fetch_additional_code_from_nlk(isbn):
     try:
         url = f"https://www.nl.go.kr/seoji/SearchApi.do?cert_key={nlk_key}&result_style=xml&page_no=1&page_size=10&isbn={isbn}"
@@ -53,10 +74,17 @@ def fetch_additional_code_from_nlk(isbn):
             add_code = doc.findtext('EA_ADD_CODE')
             return add_code.strip() if add_code else ""
     except Exception as e:
+<<<<<<< HEAD
         st.warning(f"📡 국중API 부가기호 오류: {e}")
     return ""
 
 # 📚 알라딘 기반 MARC 생성 (캐시 O)
+=======
+        st.warning(f"📡 국중API 오류: {e}")
+    return ""
+
+# 📚 알라딘 API + MARC 생성
+>>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
 @st.cache_data(show_spinner=False)
 def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     try:
@@ -69,8 +97,13 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
         return ""
 
     title = data.get("title", "제목없음")
+<<<<<<< HEAD
     author = data.get("author", "저자미생")
     publisher = data.get("publisher", "출판사미생")
+=======
+    author = data.get("author", "저자미상")
+    publisher = data.get("publisher", "출판사미상")
+>>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
     pubdate = data.get("pubDate", "2025")[:4]
     price = data.get("priceStandard")
     series_title = data.get("seriesInfo", {}).get("seriesName", "").strip()
@@ -88,7 +121,11 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     keyword_set.update(extract_keywords_from_text(description, 2))
     keyword_set.update(extract_keywords_from_text(toc, 2))
 
+<<<<<<< HEAD
     # MARC 조립
+=======
+    # 📄 MARC 생성
+>>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
     marc = f"=007  ta\n=245  10$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
     if add_code:
         marc += f"$g{add_code}"
@@ -109,8 +146,13 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
 
     return marc
 
+<<<<<<< HEAD
 # 🎛️ UI 영역
 st.title("📚 ISBN to MARC 변환기 (알라딘 + 국립중앙도서관 + GPT)")
+=======
+# 🎛️ Streamlit UI
+st.title("📚 ISBN to MARC 변환기 (Cloud용, konlpy 없이)")
+>>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
 
 isbn_list = []
 single_isbn = st.text_input("🔹 단일 ISBN 입력", placeholder="예: 9788936434267")
@@ -138,7 +180,10 @@ if isbn_list:
     full_text = "\n\n".join(marc_results)
     st.download_button("📦 모든 MARC 다운로드", data=full_text, file_name="marc_output.txt", mime="text/plain")
 
+<<<<<<< HEAD
 # 📄 템플릿 예시 다운로드
+=======
+>>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
 example_csv = "ISBN,등록기호,등록번호,별치기호\n9791173473968,JUT,12345,TCH\n"
 buffer = io.BytesIO()
 buffer.write(example_csv.encode("utf-8-sig"))
