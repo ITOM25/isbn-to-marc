@@ -7,6 +7,7 @@ import re
 import io
 from collections import Counter
 from bs4 import BeautifulSoup
+from openai import OpenAI
 
 # ✅ API 키 (secrets.toml에서 불러오기)
 openai_key = st.secrets["api_keys"]["openai_key"]
@@ -37,7 +38,7 @@ def extract_category_keywords(category_str):
 # 🔧 GPT 기반 KDC 추천
 def recommend_kdc(title, author, api_key):
     try:
-        client = openai.OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key)
         prompt = f"""도서 제목: {title}
 저자: {author}
 이 책의 주제를 고려하여 한국십진분류(KDC) 번호 하나를 추천해 주세요.
@@ -48,13 +49,10 @@ KDC: 813.7"""
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
         )
-        answer = response.choices[0].message.content
-        for line in answer.strip().splitlines():
-            if "KDC:" in line:
-                return line.replace("KDC:", "").strip()
+        return response.choices[0].message.content.strip().replace("KDC:", "").strip()
     except Exception as e:
         st.warning(f"🧠 GPT 오류: {e}")
-    return "000"
+        return "000"
 
 # 📡 부가기호 추출 (국립중앙도서관)
 def fetch_additional_code_from_nlk(isbn):
