@@ -241,10 +241,21 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     tag_041 = f"=041  \\$a{lang_a}" + (f"$h{lang_h}" if lang_h != "und" else "")
     tag_546 = f"=546  \\$a{generate_546_from_041_kormarc(tag_041)}"
 
+    # — 국중 부가기호 받기 (캐시+예외처리)
+    add_code = future_nlk.result()
+    # — 국중 부가기호 받기 (캐시+예외처리)
+    add_code = future_nlk.result()
+
     # 4) 020 필드: ISBN 뒤에 :$c{price}를 항상 붙이기
     tag_020 = f"=020  \\$a{isbn}:$c{price}"
     if add_code:
         tag_020 += f"$g{add_code}"
+
+    # 4) 020 필드: ISBN 뒤에 :$c{price}를 항상 붙이기
+    tag_020 = f"=020  \\$a{isbn}:$c{price}"
+    if add_code:
+        tag_020 += f"$g{add_code}"
+
 
     # — KDC·653 (원칙대로 제목·목차·설명·카테고리를 모두 넘겨 주기)
     kdc     = recommend_kdc(title, author, api_key=openai_key)
