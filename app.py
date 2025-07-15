@@ -37,23 +37,39 @@ def extract_category_keywords(category_str):
     return list(keywords)
 
 # 🔧 GPT 기반 KDC 추천
+# 🔧 GPT 기반 KDC 추천 (OpenAI 1.6.0+ 방식으로 리팩토링)
 def recommend_kdc(title, author, api_key):
     try:
+        # 🔑 비밀의 열쇠로 클라이언트를 깨웁니다
         client = OpenAI(api_key=api_key)
-        prompt = f"""도서 제목: {title}
-저자: {author}
-이 책의 주제를 고려하여 한국십진분류(KDC) 번호 하나를 추천해 주세요.
-정확한 숫자만 아래 형식으로 간단히 응답해 주세요:
-KDC: 813.7"""
+
+        # 📜 주문문을 준비하고
+        prompt = (
+            f"도서 제목: {title}\n"
+            f"저자: {author}\n"
+            "이 책의 주제를 고려하여 한국십진분류(KDC) 번호 하나를 추천해 주세요.\n"
+            "정확한 숫자만 아래 형식으로 간단히 응답해 주세요:\n"
+            "KDC: 813.7"
+        )
+
+        # 🧠 GPT의 지혜를 소환
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
         )
-        return response.choices[0].message.content.strip().replace("KDC:", "").strip()
+
+        # ✂️ “KDC:” 뒤의 숫자만 꺼내서 돌려드립니다
+        for line in response.choices[0].message.content.splitlines():
+            if "KDC:" in line:
+                return line.split("KDC:")[1].strip()
+
     except Exception as e:
         st.warning(f"🧠 GPT 오류: {e}")
-        return "000"
+
+    # 🛡️ 만약 실패하면 디폴트 “000”
+    return "000"
+
 
 # 📡 부가기호 추출 (국립중앙도서관)
 def fetch_additional_code_from_nlk(isbn):
