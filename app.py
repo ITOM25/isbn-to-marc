@@ -9,6 +9,7 @@ from collections import Counter
 from bs4 import BeautifulSoup
 from openai import OpenAI
 
+
 # ✅ API 키 (secrets.toml에서 불러오기)
 openai_key = st.secrets["api_keys"]["openai_key"]
 aladin_key = st.secrets["api_keys"]["aladin_key"]
