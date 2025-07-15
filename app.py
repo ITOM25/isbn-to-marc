@@ -163,9 +163,12 @@ def build_653_field(title, description, toc, raw_category):
 
     # 4) 카테고리 앞세우기
     final    = ([category] if category else []) + body
+    # 5) 각 키워드의 공백 제거 (e.g. '어린이를 위한 고전' → '어린이를위한고전')
+    final    = [kw.replace(" ", "") for kw in final]
 
-    # 5) 조립
+    # 6) 조립
     return "=653  \\" + "".join(f"$a{kw}" for kw in final) if final else ""
+
 
 
 
