@@ -13,11 +13,11 @@ from collections import Counter
 =======
 from collections import Counter
 
-# ✅ API 키 불러오기
->>>>>>> 90f8781 (🐿️ konlpy 제거: Streamlit Cloud 호환 버전으로 수정)
+# ✅ API 키들 (secrets.toml에서 불러오기)
 openai_key = st.secrets["api_keys"]["openai_key"]
 aladin_key = st.secrets["api_keys"]["aladin_key"]
 nlk_key = st.secrets["api_keys"]["nlk_key"]
+
 
 <<<<<<< HEAD
 okt = Okt()
