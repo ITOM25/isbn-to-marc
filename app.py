@@ -172,40 +172,40 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     lang_h = detect_language(original_title)
     tag_041 = f"=041  \\$a{lang_a}" + (f"$h{lang_h}" if original_title else "")
     tag_546 = f"=546  \\$a{generate_546_from_041_kormarc(tag_041)}"
-    tag_020 = f"=020  \\$c\{price}" if price else ""
+    tag_020 = f"=020  \\$c\\{price}" if price else ""
 
     kdc = recommend_kdc(title, author, api_key=openai_key)
     add_code = fetch_additional_code_from_nlk(isbn)
     tag_653 = build_653_field(title, description, toc, category)
 
-    marc = f"=007  ta
-=245  00$a{title} /$c{author}
-=260  \\$a서울 :$b{publisher},$c{pubdate}.
-{tag_020}"
-    if add_code:
-        marc += f"$g{add_code}"
-    if kdc and kdc != "000":
-        marc += f"
-=056  \\$a{kdc}$26"
-    if tag_653:
-        marc += f"
-{tag_653}"
-    if tag_041:
-        marc += f"
-{tag_041}"
-    if tag_546:
-        marc += f"
-{tag_546}"
-    if price:
-        marc += f"
-=950  0\$b\{price}"
-    if reg_mark or reg_no or copy_symbol:
-        marc += f"
-=049  0\$I{reg_mark}{reg_no}"
-        if copy_symbol:
-            marc += f"$f{copy_symbol}"
+    marc_lines = [
+        "=007  ta",
+        f"=245  00$a{title} /$c{author}",
+        f"=260  \\$a서울 :$b{publisher},$c{pubdate}.",
+    ]
 
-    return marc
+    if tag_020:
+        marc_lines.append(tag_020)
+    if add_code:
+        marc_lines[-1] += f"$g{add_code}"  # 020에 이어 붙이기
+    if kdc and kdc != "000":
+        marc_lines.append(f"=056  \\$a{kdc}$26")
+    if tag_653:
+        marc_lines.append(tag_653)
+    if tag_041:
+        marc_lines.append(tag_041)
+    if tag_546:
+        marc_lines.append(tag_546)
+    if price:
+        marc_lines.append(f"=950  0\\$b\\{price}")
+    if reg_mark or reg_no or copy_symbol:
+        line = f"=049  0\\$I{reg_mark}{reg_no}"
+        if copy_symbol:
+            line += f"$f{copy_symbol}"
+        marc_lines.append(line)
+
+    return "\n".join(marc_lines)
+
 
 # 🎛️ Streamlit UI
 st.title("📚 ISBN to MARC 변환기 (통합버전)")
