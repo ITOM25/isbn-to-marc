@@ -90,25 +90,20 @@ def build_653_field(title, description, toc, raw_category):
                 last_keywords.append(parts[-1])
         return last_keywords
 
-    # 🎯 키워드 분리 저장
-    category_keywords = extract_categories(raw_category)  # 제한 없음
+    category_keywords = extract_categories(raw_category)
     title_kw = clean_keywords(extract_keywords_from_text(title, 3))
     desc_kw = clean_keywords(extract_keywords_from_text(description, 4))
     toc_kw = clean_keywords(extract_keywords_from_text(toc, 5))
+    body_keywords = list(dict.fromkeys(title_kw + desc_kw + toc_kw))[:7]
 
-    body_keywords = list(dict.fromkeys(title_kw + desc_kw + toc_kw))[:7]  # 순서유지 + 중복제거 + 최대 7
-
-    # 🧪 결합 (순서: 카테고리 → 본문)
     combined = category_keywords + body_keywords
-    final_keywords = combined[:8]  # 총 8개 제한
+    final_keywords = combined[:8]
 
     if final_keywords:
         return "=653  \\" + "".join([f"$a{kw}" for kw in final_keywords])
     return ""
 
-
-
-# 📚 MARC 생성 (알라딘 + GPT + 국중)
+# 📚 MARC 생성
 @st.cache_data(show_spinner=False)
 def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     try:
@@ -132,7 +127,7 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
 
     add_code = fetch_additional_code_from_nlk(isbn)
     kdc = recommend_kdc(title, author, api_key=openai_key)
-    keywords = generate_653_keywords(title, description, toc, category)
+    keywords = build_653_field(title, description, toc, category)
 
     marc = f"=007  ta\n=245  00$a{title} /$c{author}\n=260  \\$a서울 :$b{publisher},$c{pubdate}.\n=020  \\$a{isbn}"
     if add_code:
@@ -142,7 +137,7 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     if kdc and kdc != "000":
         marc += f"\n=056  \\$a{kdc}$26"
     if keywords:
-        marc += "\n=653  \\" + "".join([f"$a{kw}" for kw in keywords])
+        marc += f"\n{keywords}"
     if series_title:
         marc += f"\n=490  10$a{series_title} ;$v\n=830  \\0$a{series_title} ;$v"
     if price:
@@ -151,7 +146,6 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
         marc += f"\n=049  0\\$I{reg_mark}{reg_no}"
         if copy_symbol:
             marc += f"$f{copy_symbol}"
-
     return marc
 
 # 🎛️ Streamlit UI
