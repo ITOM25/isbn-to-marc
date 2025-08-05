@@ -5,6 +5,7 @@ import openai
 import xml.etree.ElementTree as ET
 import re
 import io
+import xml.etree.ElementTree as ET
 from collections import Counter
 from bs4 import BeautifulSoup
 from openai import OpenAI
@@ -28,6 +29,8 @@ _nlk_session.mount(
 openai_key = st.secrets["api_keys"]["openai_key"]
 aladin_key = st.secrets["api_keys"]["aladin_key"]
 nlk_key = st.secrets["api_keys"]["nlk_key"]
+
+gpt_client = OpenAI(api_key=openai_key)
 
 # 🔍 키워드 추출 (konlpy 없이)
 def extract_keywords_from_text(text, top_n=7):
@@ -164,27 +167,99 @@ def crawl_aladin_original_and_price(isbn13):
         return {}
 
 # 📄 653 필드 키워드 생성
-def build_653_field(title, description, toc, raw_category):
-    # 1) 카테고리 마지막 요소
-    parts   = [p.strip() for p in raw_category.split(">") if p.strip()]
-    category = parts[-1] if parts else ""
+# ② 알라딘 메타데이터 호출 함수
+def fetch_aladin_metadata(isbn):
+    url = (
+        "http://www.aladin.co.kr/ttb/api/ItemLookUp.aspx"
+        f"?ttbkey={aladin_key}"
+        "&ItemIdType=ISBN"
+        f"&ItemId={isbn}"
+        "&output=js"
+        "&Version=20131101"
+        "&OptResult=Toc" 
+    )
+    data = requests.get(url).json()
+    item = data["item"][0]
+    return {
+        "category": item.get("categoryName", ""),
+        "title": item.get("title", ""),
+        "description": item.get("description", ""),
+        "toc": item.get("toc", ""),
+    }
 
-    # 2) 제목에서 명사 2개, 목차 5개, 설명 3개
-    title_kw = clean_keywords(extract_keywords_from_text(title,  top_n=2))
-    toc_kw   = clean_keywords(extract_keywords_from_text(toc,    top_n=5))
-    desc_kw  = clean_keywords(extract_keywords_from_text(description, top_n=3))
 
-    # 3) 순서 유지하며 중복 제거, 최대 7개
-    combined = list(dict.fromkeys(title_kw + toc_kw + desc_kw))
-    body     = combined[:7]
+# ③ GPT-4 기반 653 생성 함수
+def generate_653_with_gpt(category, title, description, toc, max_keywords=7):
+    parts = [p.strip() for p in category.split(">") if p.strip()]
+    cat_kw = parts[-1] if parts else ""
+    system_msg = {
+        "role": "system",
+        "content": (
+            "당신은 도서관 메타데이터 전문가입니다. "
+            "책의 분류, 제목, 설명, 목차 정보를 바탕으로 "
+            "MARC 653 필드용 주제어를 추출하세요."
+        )
+    }
+    user_msg = {
+        "role": "user",
+        "content": (
+            f"다음 입력으로 최대 {max_keywords}개의 MARC 653 주제어를 한 줄로 출력해 주세요:\n\n"
+            f"- 분류: \"{cat_kw}\"\n"
+            f"- 제목: \"{title}\"\n"
+            f"- 설명: \"{description}\"\n"
+            f"- 목차: \"{toc}\"\n\n"
+             "※ “제목”에 사용된 단어는 제외하고, 순수하게 분류·설명·목차에서 추출된 주제어만 뽑아주세요.\n"
+            "출력 형식: $a키워드1 $a키워드2 …"
+        )
+    }
+    try:
+        resp = gpt_client.chat.completions.create(
+            model="gpt-4",
+            messages=[system_msg, user_msg],
+            temperature=0.2,
+            max_tokens=150,
+        )
+        # 1) 원본 응답을 raw에 담습니다
+        raw = resp.choices[0].message.content.strip()
 
-    # 4) 카테고리 앞세우기
-    final    = ([category] if category else []) + body
-    # 5) 각 키워드의 공백 제거 (e.g. '어린이를 위한 고전' → '어린이를위한고전')
-    final    = [kw.replace(" ", "") for kw in final]
+        # 2) $a … 다음 $a 또는 끝까지 캡처 (non-greedy)
+        pattern = re.compile(r"\$a(.*?)(?=(?:\$a|$))", re.DOTALL)
+        kws = [m.group(1).strip() for m in pattern.finditer(raw)]
 
-    # 6) 조립
-    return "=653  \\" + "".join(f"$a{kw}" for kw in final) if final else ""
+        # 3) 각 키워드 내부 공백 제거
+        kws = [kw.replace(" ", "") for kw in kws]
+
+        # 4) 다시 "$a키워드" 형태로 조립
+        return "".join(f"$a{kw}" for kw in kws)
+
+    except Exception as e:
+        st.warning(f"⚠️ 653 주제어 생성 실패: {e}")
+        return None
+    
+
+# ④ Streamlit UI
+st.title("📚 ISBN to MARC + 653 주제어 자동 생성")
+
+isbn_input = st.text_input("ISBN 입력")
+if st.button("메타데이터 조회 & 653 생성"):
+    if not isbn_input:
+        st.error("ISBN을 입력해 주세요.")
+    else:
+        meta = fetch_aladin_metadata(isbn_input)
+        st.subheader("알라딘 메타데이터")
+        st.write(meta)
+
+        gpt_653 = generate_653_with_gpt(
+            meta["category"],
+            meta["title"],
+            meta["description"],
+            meta["toc"],
+        )
+        if gpt_653:
+            st.subheader("=653")
+            st.text_area("MARC 653 주제어", gpt_653, height=100)
+        else:
+            st.error("653 주제어 생성을 실패했습니다.")
 
 
 
@@ -242,9 +317,13 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     if add_code:
         tag_020 += f"$g{add_code}"
 
+
     # 5) KDC·653
     kdc     = recommend_kdc(title, author, api_key=openai_key)
-    tag_653 = build_653_field(title, description, toc, category)
+    # GPT-4로 653 주제어 생성 (None 반환 시 빈 문자열 처리)
+    gpt_653 = generate_653_with_gpt(category, title, description, toc, max_keywords=7)
+    tag_653 = f"=653  \\{gpt_653.replace(' ', '')}" if gpt_653 else ""
+
 
     # 6) MARC 라인 초기화
     marc_lines = [
