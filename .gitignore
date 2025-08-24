@@ -2,3 +2,9 @@
 .streamlit/secrets.toml
 .streamlit/secrets.toml
 .streamlit/secrets.toml
+venv/
+.streamlit/secrets.toml
+구테스트/secrets.toml
+test_openai_key.py
+__pycache__/
+*.pyc
