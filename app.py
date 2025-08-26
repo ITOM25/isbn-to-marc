@@ -6,7 +6,9 @@ import xml.etree.ElementTree as ET
 import re
 import io
 import xml.etree.ElementTree as ET
-import re, datetime
+import re
+import datetime
+import unicodedata
 from collections import Counter
 from bs4 import BeautifulSoup
 from openai import OpenAI
@@ -287,6 +289,45 @@ def crawl_aladin_original_and_price(isbn13):
     except:
         return {}
 
+# ---- 653 전처리 유틸 ----
+def _norm(text: str) -> str:
+    import re, unicodedata
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFKC", text).lower()
+    text = re.sub(r"[^\w\s\uac00-\ud7a3]", " ", text)  # 한/영/숫자/공백만
+    return re.sub(r"\s+", " ", text).strip()
+
+def _clean_author_str(s: str) -> str:
+    import re
+    if not s:
+        return ""
+    s = re.sub(r"\(.*?\)", " ", s)      # (지은이), (옮긴이) 등 제거
+    s = re.sub(r"[/;·,]", " ", s)       # 구분자 공백화
+    return re.sub(r"\s+", " ", s).strip()
+
+def _build_forbidden_set(title: str, authors: str) -> set:
+    t_norm = _norm(title)
+    a_norm = _norm(authors)
+    forb = set()
+    if t_norm:
+        forb.update(t_norm.split())
+        forb.add(t_norm.replace(" ", ""))  # '죽음 트릴로지' → '죽음트릴로지'
+    if a_norm:
+        forb.update(a_norm.split())
+        forb.add(a_norm.replace(" ", ""))
+    return {f for f in forb if f and len(f) >= 2}  # 1글자 제거
+
+def _should_keep_keyword(kw: str, forbidden: set) -> bool:
+    n = _norm(kw)
+    if not n or len(n.replace(" ", "")) < 2:
+        return False
+    for tok in forbidden:
+        if tok in n or n in tok:
+            return False
+    return True
+# -------------------------
+
 # 📄 653 필드 키워드 생성
 # ② 알라딘 메타데이터 호출 함수
 def fetch_aladin_metadata(isbn):
@@ -297,40 +338,55 @@ def fetch_aladin_metadata(isbn):
         f"&ItemId={isbn}"
         "&output=js"
         "&Version=20131101"
-        "&OptResult=Toc" 
+        "&OptResult=Toc"
     )
     data = requests.get(url).json()
-    item = data["item"][0]
+    item = (data.get("item") or [{}])[0]
+
+    # 저자 필드 다양한 키 대응
+    raw_author = item.get("author") or item.get("authors") or item.get("author_t") or ""
+    authors = _clean_author_str(raw_author)
+
     return {
-        "category": item.get("categoryName", ""),
-        "title": item.get("title", ""),
-        "description": item.get("description", ""),
-        "toc": item.get("toc", ""),
+        "category": item.get("categoryName", "") or "",
+        "title": item.get("title", "") or "",
+        "authors": authors,                           # ⬅️ 추가됨
+        "description": item.get("description", "") or "",
+        "toc": item.get("toc", "") or "",
     }
 
 
+
 # ③ GPT-4 기반 653 생성 함수
-def generate_653_with_gpt(category, title, description, toc, max_keywords=7):
-    parts = [p.strip() for p in category.split(">") if p.strip()]
+def generate_653_with_gpt(category, title, authors, description, toc, max_keywords=7):
+    parts = [p.strip() for p in (category or "").split(">") if p.strip()]
     cat_kw = parts[-1] if parts else ""
+
+    forbidden = _build_forbidden_set(title, authors)
+
     system_msg = {
         "role": "system",
         "content": (
             "당신은 도서관 메타데이터 전문가입니다. "
-            "책의 분류, 제목, 설명, 목차 정보를 바탕으로 "
-            "MARC 653 필드용 주제어를 추출하세요."
+            "책의 분류, 설명, 목차를 바탕으로 MARC 653 주제어를 도출하세요. "
+            "서명(245)·저자(100/700)에 존재하는 단어는 제외합니다."
         )
     }
     user_msg = {
         "role": "user",
         "content": (
-            f"다음 입력으로 최대 {max_keywords}개의 MARC 653 주제어를 한 줄로 출력해 주세요:\n\n"
+            f"입력 정보로부터 최대 {max_keywords}개의 MARC 653 주제어를 한 줄로 출력해 주세요.\n\n"
             f"- 분류: \"{cat_kw}\"\n"
-            f"- 제목: \"{title}\"\n"
+            f"- 제목(245): \"{title}\"\n"
+            f"- 저자(100/700): \"{authors}\"\n"
             f"- 설명: \"{description}\"\n"
             f"- 목차: \"{toc}\"\n\n"
-             "※ “제목”에 사용된 단어는 제외하고, 순수하게 분류·설명·목차에서 추출된 주제어만 뽑아주세요.\n"
-            "출력 형식: $a키워드1 $a키워드2 …"
+            "제외어 목록(서명/저자에서 유래): "
+            f"{', '.join(sorted(forbidden)) or '(없음)'}\n\n"
+            "규칙:\n"
+            "1) '제목'과 '저자'에 쓰인 단어·표현은 절대 포함하지 마세요.\n"
+            "2) 분류/설명/목차에서 핵심 개념을 명사 중심으로 뽑으세요.\n"
+            "3) 출력 형식: $a키워드1 $a키워드2 … (한 줄)\n"
         )
     }
     try:
@@ -338,25 +394,42 @@ def generate_653_with_gpt(category, title, description, toc, max_keywords=7):
             model="gpt-4",
             messages=[system_msg, user_msg],
             temperature=0.2,
-            max_tokens=150,
+            max_tokens=180,
         )
-        # 1) 원본 응답을 raw에 담습니다
-        raw = resp.choices[0].message.content.strip()
+        raw = (resp.choices[0].message.content or "").strip()
 
-        # 2) $a … 다음 $a 또는 끝까지 캡처 (non-greedy)
+        # $a 단위 파싱
         pattern = re.compile(r"\$a(.*?)(?=(?:\$a|$))", re.DOTALL)
         kws = [m.group(1).strip() for m in pattern.finditer(raw)]
+        if not kws:
+            # 백업 파싱
+            tmp = re.split(r"[,\n]", raw)
+            kws = [t.strip().lstrip("$a") for t in tmp if t.strip()]
 
-        # 3) 각 키워드 내부 공백 제거
+        # 공백 삭제(원하면 유지 가능)
         kws = [kw.replace(" ", "") for kw in kws]
 
-        # 4) 다시 "$a키워드" 형태로 조립
-        return "".join(f"$a{kw}" for kw in kws)
+        # 1차: 금칙어(서명/저자) 필터
+        kws = [kw for kw in kws if _should_keep_keyword(kw, forbidden)]
+
+        # 2차: 정규화 중복 제거
+        seen = set()
+        uniq = []
+        for kw in kws:
+            n = _norm(kw)
+            if n not in seen:
+                seen.add(n)
+                uniq.append(kw)
+
+        # 3차: 최대 개수 제한
+        uniq = uniq[:max_keywords]
+
+        return "".join(f"$a{kw}" for kw in uniq)
 
     except Exception as e:
         st.warning(f"⚠️ 653 주제어 생성 실패: {e}")
         return None
-    
+   
 
 
 # 📚 MARC 생성
@@ -419,8 +492,19 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
 
     # 6) 653/KDC — ✅ 여기서만 생성 (GPTAPI 최신 함수로 통일)
     kdc     = recommend_kdc(title, author, api_key=openai_key)
-    gpt_653 = generate_653_with_gpt(category, title, description, toc, max_keywords=7)
+
+    # ⬇️ authors 인자 추가(저자 문자열을 전처리해서 넘김)
+    gpt_653 = generate_653_with_gpt(
+    category,
+    title,
+    _clean_author_str(author),   # ← 추가된 부분
+    description,
+    toc,
+    max_keywords=7
+    )
+
     tag_653 = f"=653  \\{gpt_653.replace(' ', '')}" if gpt_653 else ""
+
 
     # 7) 기본 MARC 라인
     marc_lines = [
