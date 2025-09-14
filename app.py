@@ -92,8 +92,8 @@ def build_008_kormarc_bk(
         " " * 4,                    # 22-25 (이용대상/자료형태/내용형식) 공백
         " " * 2,                    # 26-27 공백
         pad(modified_record,1),     # 28
-        " ",                        # 29 회의간행물
-        " ",                        # 30 기념논문집
+        "0",                        # 29 회의간행물
+        "0",                        # 30 기념논문집
         has_index if has_index in ("0","1") else "0",  # 31 색인
         pad(cataloging_src,1),      # 32 목록 전거
         pad(lit_form,1),            # 33 문학형식
