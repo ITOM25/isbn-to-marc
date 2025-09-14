@@ -1,19 +1,17 @@
 import streamlit as st
 import requests
 import pandas as pd
-import openai
-import xml.etree.ElementTree as ET
-import re
 import io
+import datetime
 import xml.etree.ElementTree as ET
 import re
-import datetime
 import unicodedata
 from collections import Counter
 from bs4 import BeautifulSoup
 from openai import OpenAI
 from requests.adapters import HTTPAdapter, Retry
 from concurrent.futures import ThreadPoolExecutor
+
 
 # ── 한 번만 생성: 국중API용 세션 & 재시도 설정
 _nlk_session = requests.Session()
@@ -35,20 +33,45 @@ nlk_key = st.secrets["api_keys"]["nlk_key"]
 
 gpt_client = OpenAI(api_key=openai_key)
 
-# 008 본문(40자) 조립기: 단행본 기준, type_of_date 기본 's'
+# 한국 발행지 문자열 → KORMARC 3자리 코드 (필요 시 확장)
+KR_REGION_TO_CODE = {
+    "서울": "ulk", "서울특별시": "ulk",
+    "경기": "ggk", "경기도": "ggk",
+    "부산": "bnk", "부산광역시": "bnk",
+    "대구": "tgk", "대구광역시": "tgk",
+    "인천": "ick", "인천광역시": "ick",
+    "광주": "kjk", "광주광역시": "kjk",
+    "대전": "tjk", "대전광역시": "tjk",
+    "울산": "usk", "울산광역시": "usk",
+    "세종": "sjk", "세종특별자치시": "sjk",
+    "강원": "gak", "강원특별자치도": "gak",
+    "충북": "hbk", "충청북도": "hbk",
+    "충남": "hck", "충청남도": "hck",
+    "전북": "jbk", "전라북도": "jbk",
+    "전남": "jnk", "전라남도": "jnk",
+    "경북": "gbk", "경상북도": "gbk",
+    "경남": "gnk", "경상남도": "gnk",
+    "제주": "jjk", "제주특별자치도": "jjk",
+}
+
+# 기본값: 발행국/언어/목록전거
+COUNTRY_FIXED = "ulk"   # 발행국 기본값
+LANG_FIXED    = "kor"   # 언어 기본값
+
+# 008 본문(40자) 조립기 — 단행본 기준(type_of_date 기본 's')
 def build_008_kormarc_bk(
     date_entered,          # 00-05 YYMMDD
-    date1,                 # 07-10 4자리(예: '2025' / '19uu' 허용)
-    country3,              # 15-17 3자리 (지금은 'HST' 고정)
-    lang3,                 # 35-37 3자리 (지금은 'MRT' 고정)
+    date1,                 # 07-10 4자리(예: '2025' / '19uu')
+    country3,              # 15-17 3자리
+    lang3,                 # 35-37 3자리
     date2="",              # 11-14
-    illus4="",             # 18-21 최대 4자 (예: 'a', 'ad', 'ado'…)
+    illus4="",             # 18-21 최대 4자(예: 'a','ad','ado'…)
     has_index="0",         # 31 '0' 없음 / '1' 있음
-    lit_form=" ",          # 33 문학형식 (p 시, f 소설, e 수필, i 서간문학, m 기행/일기/수기)
-    bio=" ",               # 34 전기 (a 자서전, b 전기, d 부분적 전기)
-    type_of_date="s",      # 06 기본 's'
-    modified_record=" ",   # 28 기본 공백
-    cataloging_src=" ",    # 32 기본 공백
+    lit_form=" ",          # 33 (p시/f소설/e수필/i서간문학/m기행·일기·수기)
+    bio=" ",               # 34 (a 자서전 / b 전기·평전 / d 부분적 전기)
+    type_of_date="s",      # 06
+    modified_record=" ",   # 28
+    cataloging_src="a",    # 32  ← 기본값 'a'
 ):
     def pad(s, n, fill=" "):
         s = "" if s is None else str(s)
@@ -68,60 +91,68 @@ def build_008_kormarc_bk(
         pad(illus4,4),              # 18-21
         " " * 4,                    # 22-25 (이용대상/자료형태/내용형식) 공백
         " " * 2,                    # 26-27 공백
-        pad(modified_record,1),     # 28 공백
-        " ",                        # 29 회의간행물 공백
-        " ",                        # 30 기념논문집 공백
-        has_index if has_index in ("0","1") else "0", # 31 색인
-        pad(cataloging_src,1),      # 32 공백
+        pad(modified_record,1),     # 28
+        " ",                        # 29 회의간행물
+        " ",                        # 30 기념논문집
+        has_index if has_index in ("0","1") else "0",  # 31 색인
+        pad(cataloging_src,1),      # 32 목록 전거
         pad(lit_form,1),            # 33 문학형식
         pad(bio,1),                 # 34 전기
         pad(lang3,3),               # 35-37 언어
-        " " * 2                     # 38-39 공백
+        " " * 2                     # 38-39 (정부기관부호 등) 공백
     ])
     if len(body) != 40:
         raise AssertionError(f"008 length != 40: {len(body)}")
     return body
 
-# 알라딘 pubDate 문자열에서 연도만 추출
+# 발행연도 추출(알라딘 pubDate 우선)
 def extract_year_from_aladin_pubdate(pubdate_str: str) -> str:
     m = re.search(r"(19|20)\d{2}", pubdate_str or "")
     return m.group(0) if m else "19uu"
 
-# 삽화 감지: a(삽화/일러스트), d(도표/그래프), o(사진/화보)
+# 300 발행지 문자열 → country3 추론
+def guess_country3_from_place(place_str: str) -> str:
+    if not place_str:
+        return COUNTRY_FIXED
+    for key, code in KR_REGION_TO_CODE.items():
+        if key in place_str:
+            return code
+    # 한국 일반코드("ko ")는 사용하지 않으므로, 기본값으로 통일
+    return COUNTRY_FIXED
+
+
+# ====== 단어 감지 ======
 def detect_illus4(text: str) -> str:
+    # a: 삽화/일러스트/그림, d: 도표/그래프/차트, o: 사진/화보
     keys = []
-    if re.search(r"삽화|일러스트|일러스트레이션|그림|illustration", text, re.I): keys.append("a")
-    if re.search(r"도표|차트|그래프", text, re.I):                              keys.append("d")
-    if re.search(r"사진|포토|화보|photo", text, re.I):                           keys.append("o")
-    out=[]; [out.append(k) for k in keys if k not in out]
+    if re.search(r"삽화|삽도|도해|일러스트|일러스트레이션|그림|illustration", text, re.I): keys.append("a")
+    if re.search(r"도표|표|차트|그래프|chart|graph", text, re.I):                          keys.append("d")
+    if re.search(r"사진|포토|화보|photo|photograph|컬러사진|칼라사진", text, re.I):          keys.append("o")
+    out = []
+    for k in keys:
+        if k not in out:
+            out.append(k)
     return "".join(out)[:4]
 
-# 색인 감지: '색인', '찾아보기', 'index'
 def detect_index(text: str) -> str:
-    return "1" if re.search(r"색인|찾아보기|index", text, re.I) else "0"
+    return "1" if re.search(r"색인|찾아보기|인명색인|사항색인|index", text, re.I) else "0"
 
-# 문학형식 감지: p 시 / f 소설 / e 수필 / i 서간문학 / m 기행·일기·수기
-def detect_lit_form(title: str, category: str, kdc: str = None) -> str:
-    blob = f"{title} {category}"
-    if re.search(r"서간집|편지|서간문|letters?", blob, re.I): return "i"
-    if re.search(r"기행|여행기|일기|수기|diary|travel", blob, re.I): return "m"
-    if re.search(r"시집|poem|poetry", blob, re.I): return "p"
-    if re.search(r"소설|novel|fiction", blob, re.I): return "f"
-    if re.search(r"에세이|수필|essay", blob, re.I): return "e"
-    return " "  # 비문학 또는 미분류
-
-# 전기 감지: a 자서전 / b 전기·평전(타인) / d 부분적 전기(회고/일기 등 암시)
-def detect_bio(text: str) -> str:
-    t = text or ""
-    if re.search(r"자서전|autobiograph", t, re.I): return "a"
-    if re.search(r"전기|평전|biograph", t, re.I):  return "b"
-    if re.search(r"전기적|회고|회상", t):         return "d"
+def detect_lit_form(title: str, category: str, extra_text: str = "") -> str:
+    blob = f"{title} {category} {extra_text}"
+    if re.search(r"서간집|편지|서간문|letters?", blob, re.I): return "i"    # 서간문학
+    if re.search(r"기행|여행기|여행 에세이|일기|수기|diary|travel", blob, re.I): return "m"  # 기행/일기/수기
+    if re.search(r"시집|산문시|poem|poetry", blob, re.I): return "p"        # 시
+    if re.search(r"소설|장편|중단편|novel|fiction", blob, re.I): return "f"  # 소설
+    if re.search(r"에세이|수필|essay", blob, re.I): return "e"               # 수필
     return " "
 
-# ISBN 하나로 008 생성 (요청사항 반영: country/lang 임시 고정값)
-COUNTRY_FIXED = "HST"  # TODO: 300 모듈 완성 후 override
-LANG_FIXED    = "MRT"  # TODO: 041 모듈 완성 후 override
+def detect_bio(text: str) -> str:
+    if re.search(r"자서전|회고록|autobiograph", text, re.I): return "a"
+    if re.search(r"전기|평전|인물 평전|biograph", text, re.I): return "b"
+    if re.search(r"전기적|자전적|회고|회상", text): return "d"
+    return " "
 
+# 메인: ISBN 하나로 008 생성 (toc/300/041 연동 가능)
 def build_008_from_isbn(
     isbn: str,
     *,
@@ -129,18 +160,31 @@ def build_008_from_isbn(
     aladin_title: str = "",
     aladin_category: str = "",
     aladin_desc: str = "",
-    override_country3: str = None,  # 나중에 300에서 채워 넣기
-    override_lang3: str = None,     # 나중에 041에서 채워 넣기
+    aladin_toc: str = "",            # 목차가 있으면 감지에 활용
+    source_300_place: str = "",      # 300 발행지 문자열(있으면 country3 추정)
+    override_country3: str = None,   # 외부 모듈이 주면 최우선
+    override_lang3: str = None,      # 외부 모듈이 주면 최우선(041)
+    cataloging_src: str = "a",       # 32 목록 전거(기본 'a')
 ):
     today  = datetime.datetime.now().strftime("%y%m%d")  # YYMMDD
     date1  = extract_year_from_aladin_pubdate(aladin_pubdate)
-    country3 = (override_country3 or COUNTRY_FIXED)
-    lang3    = (override_lang3    or LANG_FIXED)
 
-    bigtext   = " ".join([aladin_title or "", aladin_desc or ""])
+    # country 우선순위: override > 300발행지 매핑 > 기본값
+    if override_country3:
+        country3 = override_country3
+    elif source_300_place:
+        country3 = guess_country3_from_place(source_300_place)
+    else:
+        country3 = COUNTRY_FIXED
+
+    # lang 우선순위: override(041) > 기본값
+    lang3 = override_lang3 or LANG_FIXED
+
+    # 단어 감지용 텍스트: 제목 + 소개 + 목차
+    bigtext = " ".join([aladin_title or "", aladin_desc or "", aladin_toc or ""])
     illus4    = detect_illus4(bigtext)
     has_index = detect_index(bigtext)
-    lit_form  = detect_lit_form(aladin_title or "", aladin_category or "")
+    lit_form  = detect_lit_form(aladin_title or "", aladin_category or "", bigtext)
     bio       = detect_bio(bigtext)
 
     return build_008_kormarc_bk(
@@ -151,9 +195,10 @@ def build_008_from_isbn(
         illus4=illus4,
         has_index=has_index,
         lit_form=lit_form,
-        bio=bio
+        bio=bio,
+        cataloging_src=cataloging_src,
     )
-# ========= 008 생성 블록: 붙여넣기 끝 =========
+# ========= 008 생성 블록 v3 끝 =========
 
 # 🔍 키워드 추출 (konlpy 없이)
 def extract_keywords_from_text(text, top_n=7):
@@ -176,7 +221,6 @@ def extract_category_keywords(category_str):
             keywords.add(parts[-1])
     return list(keywords)
 
-# 🔧 GPT 기반 KDC 추천
 # 🔧 GPT 기반 KDC 추천 (OpenAI 1.6.0+ 방식으로 리팩토링)
 def recommend_kdc(title, author, api_key):
     try:
@@ -199,8 +243,15 @@ def recommend_kdc(title, author, api_key):
             temperature=0.3,
         )
 
+        # ← 여기부터 보강된 부분
+        msg = response.choices[0].message
+        content = getattr(msg, "content", None)
+        if content is None and isinstance(msg, dict):
+            content = msg.get("content", "")
+        content = content or ""
+
         # ✂️ “KDC:” 뒤의 숫자만 꺼내서 돌려드립니다
-        for line in response.choices[0].message.content.splitlines():
+        for line in content.splitlines():
             if "KDC:" in line:
                 return line.split("KDC:")[1].strip()
 
@@ -486,9 +537,12 @@ def fetch_book_data_from_aladin(isbn, reg_mark="", reg_no="", copy_symbol=""):
     tag_546 = f"=546  \\$a{generate_546_from_041_kormarc(tag_041)}"
 
     # 5) 020 (부가기호 있으면 $g 추가)
-    tag_020 = f"=020  \\$a{isbn}:$c{price}"
+    tag_020 = f"=020  \\$a{isbn}"
+    if price:
+        tag_020 += f":$c{price}"
     if add_code:
         tag_020 += f"$g{add_code}"
+
 
     # 6) 653/KDC — ✅ 여기서만 생성 (GPTAPI 최신 함수로 통일)
     kdc     = recommend_kdc(title, author, api_key=openai_key)
